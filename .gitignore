@@ -75,6 +75,8 @@ Gemfile.lock
 
 public/js/libs/require*.js
 
+*~
+*#
 
 *.swp
 .DS_Store
