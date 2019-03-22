@@ -18,8 +18,13 @@
 		li
 			a(
 				href,
-				ng-click="openCreateProjectModal('example')"
-			) #{translate("example_project")}
+				ng-click="openCreateProjectModal('sketch')"
+			) Sketch
+		li
+			a(
+				href,
+				ng-click="openCreateProjectModal('sang')"
+			) Sang
 		li
 			a(
 				href,
@@ -114,7 +119,7 @@
 			ng-cloak,
 			ng-click="selectUntagged()"
 			ng-class="{active: filter === 'untagged'}",
-		) 	
+		)	
 			a.tag-name(href)
 				span.name
 					| #{translate("uncategorized")}
@@ -128,7 +133,7 @@
 			strong #{translate("create_your_first_project")}
 			
 - if (showUserDetailsArea)
-	span(ng-controller="LeftHandMenuPromoController",  ng-cloak)
+	span(ng-controller="LeftHandMenuPromoController",	ng-cloak)
 
 		.row-spaced#userProfileInformation(ng-if="hasProjects")
 			div(ng-show="userEmails.length > 0 && userAffiliations.length == 0", ng-cloak)

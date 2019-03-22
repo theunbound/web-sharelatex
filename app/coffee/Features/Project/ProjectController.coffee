@@ -137,7 +137,10 @@ module.exports = ProjectController =
 				if template == 'example'
 					projectCreationHandler.createExampleProject user_id, projectName, cb
 				else
-					projectCreationHandler.createBasicProject user_id, projectName, cb
+					projectCreationHandler.createBasicProject user_id,
+						projectName,
+						if template? and template != "none" then template else 'mainbasic',
+						cb
 		], (err, project)->
 			return next(err) if err?
 			logger.log project: project, user: user_id, name: projectName, templateType: template, "created project"

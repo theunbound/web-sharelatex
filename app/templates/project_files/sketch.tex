@@ -1,0 +1,56 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage{revy}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[danish]{babel}
+
+\revyname{FysikRevy}
+\revyyear{<%= year %>}
+% HUSK AT OPDATERE VERSIONSNUMMER
+\version{1.0}
+\eta{$3$ minutter}
+% Her skrives et estimat af sangens/sketchens varighed
+
+\status{færdig/ideer}
+% skriv færdig hvis sketchen er færdig, ellers skriv ideer
+
+\title{<%= project_name %>}
+\author{<%= user.first_name %> <%= user.last_name %>}
+
+\begin{document}
+\maketitle
+
+%Liste over roller og deres indehavere:
+\begin{roles}
+	\role{R1}[Skuespiller 1] Rolle 1
+	\role{R2}[Skuespiller 2] Rolle 2
+	\role{MD}[Bjarke] Mogens Dam
+	\role{H}[Gorm] Holger
+\end{roles}
+
+%Liste over rekvisitter. Behold teksten 'Person, der skaffer',
+%indtil det er sikkert, hvem der skal have ansvaret for rekvisitten
+\begin{props}
+	\prop{Briks}[Person, der skaffer]
+	\prop{2 lagener}[Person, der skaffer]
+\end{props}
+
+\begin{sketch}
+
+\scene Lys op.
+%Brug \scene inden alt scenespil inkl. lys og lyd fra TeXnikken.
+
+\says{MD} Her på scenen er jeg Mogens Dam, men til dagligt er jeg Bjarke - ussel studerende.
+%\says laver en ny replik. {MD} angiver hvilken rolle, replikken tilhører.
+
+\says{H}[I skinger falset] Hvor sjovt! Jeg spiller Holger på scenen lige nu, men i virkeligheden er jeg Gorm.
+%Beskrivelse af replikken i firkantet parantes
+
+\says{MD} Det var da mærkeligt. \act{Klør sig i skægget}
+%Brug \act om skuespilsting.
+
+\scene Lys ned
+
+\end{sketch}
+\end{document}

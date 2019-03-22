@@ -76,15 +76,19 @@ module.exports = ProjectCreationHandler =
 	createProjectFromSnippet : (owner_id, projectName, docLines, callback = (error, project) ->)->
 		@createBlankProject owner_id, projectName, (error, project)->
 			return callback(error) if error?
-			ProjectCreationHandler._createRootDoc project, owner_id, docLines, callback
+			ProjectCreationHandler._createRootDoc project, owner_id, docLines, null, callback
 
-	createBasicProject :  (owner_id, projectName, callback = (error, project) ->)->
+	createBasicProject :  (owner_id, projectName, template = "mainbasic", callback = (error, project) ->)->
 		self = @
 		@createBlankProject owner_id, projectName, (error, project)->
 			return callback(error) if error?
-			self._buildTemplate "mainbasic.tex", owner_id, projectName, (error, docLines)->
+			self._buildTemplate "#{template}.tex", owner_id, projectName, (error, docLines)->
+				mainName = projectName.replace /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g, (match, index) ->
+					if (+match == 0) then return ""
+					else if index == 0 then match.toLowerCase() else match.toUpperCase()
+				mainName = mainName + ".tex"
 				return callback(error) if error?
-				ProjectCreationHandler._createRootDoc project, owner_id, docLines, callback
+				ProjectCreationHandler._createRootDoc project, owner_id, docLines, mainName, callback
 
 	createExampleProject: (owner_id, projectName, callback = (error, project) ->)->
 		self = @
@@ -94,7 +98,7 @@ module.exports = ProjectCreationHandler =
 				(callback) ->
 					self._buildTemplate "main.tex", owner_id, projectName, (error, docLines)->
 						return callback(error) if error?
-						ProjectCreationHandler._createRootDoc project, owner_id, docLines, callback
+						ProjectCreationHandler._createRootDoc project, owner_id, docLines, null, callback
 				(callback) ->
 					self._buildTemplate "references.bib", owner_id, projectName, (error, docLines)->
 						return callback(error) if error?
@@ -106,8 +110,8 @@ module.exports = ProjectCreationHandler =
 			], (error) ->
 				callback(error, project)
 
-	_createRootDoc: (project, owner_id, docLines, callback = (error, project) ->)->
-		ProjectEntityUpdateHandler.addDoc project._id, project.rootFolder[0]._id, "main.tex", docLines, owner_id, (error, doc)->
+	_createRootDoc: (project, owner_id, docLines, mainName = "main", callback = (error, project) ->)->
+		ProjectEntityUpdateHandler.addDoc project._id, project.rootFolder[0]._id, "#{mainName}.tex", docLines, owner_id, (error, doc)->
 			if error?
 				logger.err err:error, "error adding root doc when creating project"
 				return callback(error)
