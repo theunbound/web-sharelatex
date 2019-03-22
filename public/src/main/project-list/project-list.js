@@ -248,6 +248,7 @@ define(['base'], function(App) {
 
     $scope.getSelectedTagsArray = function getSelectedTagsArray() {
       return Array.from($scope.tags).filter( tag => tag.selected );
+    }
 
     $scope._removeProjectIdsFromTagArray = function(tag, remove_project_ids) {
       // Remove project_id from tag.project_ids
