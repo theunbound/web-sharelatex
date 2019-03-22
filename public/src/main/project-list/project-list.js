@@ -173,8 +173,8 @@ define(['base'], function(App) {
         if (
           $scope.filter === 'tag'
             && selectedTags.length > 0
-            && selectedTags.every( tag => {
-              return !Array.from(tag.project_ids).includes(project.id);
+            && !selectedTags.every( tag => {
+              return Array.from(tag.project_ids).includes(project.id);
             })
         ) {
           visible = false
