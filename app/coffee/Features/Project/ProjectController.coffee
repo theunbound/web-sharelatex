@@ -205,7 +205,12 @@ module.exports = ProjectController =
 			user: (cb) ->
 				User.findById user_id, "featureSwitches overleaf awareOfV2 features", cb
 			userAffiliations: (cb) ->
-				getUserAffiliations user_id, cb
+				getUserAffiliations user_id, (error, result) ->
+					if error?
+						if error.code == "ECONNREFUSED"
+							logger.log error, "userAffiliations: Connection refused. Returning empty result."
+							return cb null, []
+					return cb error, result
 			}, (err, results)->
 				if err?
 					logger.err err:err, "error getting data for project list page"
