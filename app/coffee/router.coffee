@@ -52,6 +52,7 @@ LinkedFilesRouter = require './Features/LinkedFiles/LinkedFilesRouter'
 TemplatesRouter = require './Features/Templates/TemplatesRouter'
 InstitutionsController = require './Features/Institutions/InstitutionsController'
 UserMembershipRouter = require './Features/UserMembership/UserMembershipRouter'
+RevysterHelper = require './Features/Helpers/RevysterHelper'
 
 logger = require("logger-sharelatex")
 _ = require("underscore")
@@ -75,6 +76,14 @@ module.exports = class Router
 
 		if Features.hasFeature('registration')
 			webRouter.get '/register', UserPagesController.registerPage
+			webRouter.post '/register',
+				RateLimiterMiddleware.rateLimit({
+					endpointName: "public-register"
+					maxRequests: 3
+					timeInterval: 60
+				}),
+				RevysterHelper.validateEmail,
+				UserController.register
 			AuthenticationController.addEndpointToLoginWhitelist '/register'
 
 		EditorRouter.apply(webRouter, privateApiRouter)

@@ -25,6 +25,46 @@ block content
 						.page-header
 							h1 #{translate("register")}
 						p
-							| Please contact 
-							strong(ng-non-bindable) #{settings.adminEmail} 
-							| to create an account.
+							| Nye registreringer er åbne for email-adresser, som er skrevet
+							| op til revyster-mailinglisten:
+						form(
+							async-form="register-unauth",
+							name="registerUnauthForm",
+							action="/register"
+							method="POST",
+							ng-cloak
+							)
+							input(type="hidden", name="_csrf", value=csrfToken)
+							.form-group
+								label(for='email') #{translate("email")}
+								.row
+									.col-md-8.col-xs-8
+										input.form-control(
+											type='email',
+											name='email',
+											placeholder='eksempel@fys.ku.dk',
+											required,
+											ng-model="email",
+											ng-init='email = '+JSON.stringify(email),
+											ng-model-options="{ updateOn: 'blur' }"
+										)
+									.col-md-4.col-md-4
+										.actions
+											button.btn-primary.btn(
+												type='submit',
+												ng-disabled="registerUnauthFrom.inflight || regusterUnauthForm.email.$error.required"
+												)
+												span(ng-show='!registerUnauthForm.inflight') Send
+												span(ng-show='registerUnauthForm.inflight') Sender...
+							form-messages(for="registerUnauthForm")
+								.alert.alert-danger(ng-show="regusterUnauthForm.response.error")
+									| 
+									| doot doot
+						h2 Andre email-adresser
+						p
+							| Skriv til en administrator:
+							|
+							- var adminEmail = settings.adminEmail
+							a(href="mailto:" + adminEmail) #{settings.adminEmail}
+
+
