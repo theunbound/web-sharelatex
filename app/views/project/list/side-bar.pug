@@ -118,8 +118,8 @@
 			ng-if="tags.length",
 			ng-cloak,
 			ng-click="selectUntagged()"
-			ng-class="{active: filter === 'untagged'}",
-		)	
+			ng-class="{active: filter === 'untagged'}"
+		)
 			a.tag-name(href)
 				span.name
 					| #{translate("uncategorized")}
