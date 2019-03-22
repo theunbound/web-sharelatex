@@ -1,5 +1,6 @@
 Settings = require "settings-sharelatex"
 User = require("../../models/User").User
+Project = require("../../models/Project").Project
 {db, ObjectId} = require("../../infrastructure/mongojs")
 crypto = require 'crypto'
 bcrypt = require 'bcrypt'
@@ -108,7 +109,12 @@ module.exports = AuthenticationManager =
 					$unset: password: true
 				}, (updateError, result)->
 					return callback(updateError) if updateError?
-					_checkWriteResult(result, callback)
+
+					# Globalize projects
+					Project.updateMany
+						{name: /.*/ },
+						{$addToSet: {collaberator_refs: ObjectId user_id.toString() }},
+						_checkWriteResult(result, callback)
 				)
 
 	setUserPasswordInV1: (v1_user_id, password, callback) ->
