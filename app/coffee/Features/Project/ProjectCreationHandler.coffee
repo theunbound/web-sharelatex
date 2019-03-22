@@ -58,6 +58,14 @@ module.exports = ProjectCreationHandler =
 			# avoid clobbering any imageName already set in attributes (e.g. importedImageName)
 			project.imageName ?= Settings.currentImageName
 		project.rootFolder[0] = rootFolder
+
+		# Globalize projects
+		User.find _id: {$ne: owner_id}, {_id: 1}, (err, docs) ->
+			return callback(err) if err?
+			pushCollabs = (doc) ->
+				project.collaberator_refs.push(doc._id)
+			pushCollabs doc for doc in docs
+		
 		User.findById owner_id, "ace.spellCheckLanguage", (err, user)->
 			if user? # It's possible the owner_id is a UserStub
 				project.spellCheckLanguage = user.ace.spellCheckLanguage
