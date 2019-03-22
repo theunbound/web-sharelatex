@@ -27,9 +27,11 @@ define(['base'], function(App) {
       Array.from($scope.tags).map(tag => (tag.selected = false))
 
     $scope.selectTag = function(tag) {
-      $scope._clearTags()
-      tag.selected = true
-      return $scope.setFilter('tag')
+      tag.selected = !tag.selected
+      for (var a = 0; a < $scope.tags.length; a++) {
+        if ($scope.tags[a]) return $scope.setFilter('tag')
+      }
+      $scope.filterProjects();
     }
 
     $scope.selectUntagged = function() {

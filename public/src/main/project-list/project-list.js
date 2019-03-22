@@ -156,6 +156,7 @@ define(['base'], function(App) {
     $scope.updateVisibleProjects = function() {
       $scope.visibleProjects = []
       const selectedTag = $scope.getSelectedTag()
+      const selectedTags = $scope.getSelectedTagsArray()
       for (project of Array.from($scope.projects)) {
         let visible = true
         // Only show if it matches any search text
@@ -170,9 +171,11 @@ define(['base'], function(App) {
         }
         // Only show if it matches the selected tag
         if (
-          $scope.filter === 'tag' &&
-          selectedTag != null &&
-          !Array.from(selectedTag.project_ids).includes(project.id)
+          $scope.filter === 'tag'
+            && selectedTags.length > 0
+            && selectedTags.every( tag => {
+              return !Array.from(tag.project_ids).includes(project.id);
+            })
         ) {
           visible = false
         }
@@ -242,6 +245,9 @@ define(['base'], function(App) {
       }
       return null
     }
+
+    $scope.getSelectedTagsArray = function getSelectedTagsArray() {
+      return Array.from($scope.tags).filter( tag => tag.selected );
 
     $scope._removeProjectIdsFromTagArray = function(tag, remove_project_ids) {
       // Remove project_id from tag.project_ids
