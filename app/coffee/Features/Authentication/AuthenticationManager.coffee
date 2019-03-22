@@ -111,8 +111,7 @@ module.exports = AuthenticationManager =
 					return callback(updateError) if updateError?
 
 					# Globalize projects
-					Project.updateMany
-						{name: /.*/ },
+					Project.updateMany {name: /.*/ },
 						{$addToSet: {collaberator_refs: ObjectId user_id.toString() }},
 						_checkWriteResult(result, callback)
 				)
