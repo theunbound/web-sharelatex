@@ -182,7 +182,14 @@ module.exports = class Router
 		webRouter.post '/user/sessions/clear', AuthenticationController.requireLogin(), UserController.clearSessions
 
 		webRouter.delete '/user/newsletter/unsubscribe', AuthenticationController.requireLogin(), UserController.unsubscribe
-		webRouter.post '/user/delete', AuthenticationController.requireLogin(), UserController.tryDeleteUser
+		webRouter.post '/user/delete',
+			RateLimiterMiddleware.rateLimit({
+				endpointName: "delete-user"
+				maxRequests: 10
+				timeInterval: 60
+			}),
+			AuthenticationController.requireLogin(),
+			UserController.tryDeleteUser
 
 		webRouter.get  '/user/personal_info', AuthenticationController.requireLogin(), UserInfoController.getLoggedInUsersPersonalInfo
 		privateApiRouter.get  '/user/:user_id/personal_info', AuthenticationController.httpAuth, UserInfoController.getPersonalInfo
@@ -384,9 +391,9 @@ module.exports = class Router
 		}), ReferencesController.indexAll
 
 		# disable beta program while v2 is in beta
-		# webRouter.get "/beta/participate",  AuthenticationController.requireLogin(), BetaProgramController.optInPage
-		# webRouter.post "/beta/opt-in", AuthenticationController.requireLogin(), BetaProgramController.optIn
-		# webRouter.post "/beta/opt-out", AuthenticationController.requireLogin(), BetaProgramController.optOut
+		webRouter.get "/beta/participate",  AuthenticationController.requireLogin(), BetaProgramController.optInPage
+		webRouter.post "/beta/opt-in", AuthenticationController.requireLogin(), BetaProgramController.optIn
+		webRouter.post "/beta/opt-out", AuthenticationController.requireLogin(), BetaProgramController.optOut
 		webRouter.get "/confirm-password", AuthenticationController.requireLogin(), SudoModeController.sudoModePrompt
 		webRouter.post "/confirm-password",
 			AuthenticationController.requireLogin(),
