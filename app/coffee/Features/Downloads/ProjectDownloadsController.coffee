@@ -28,11 +28,11 @@ module.exports = ProjectDownloadsController =
 		logger.log project_ids: project_ids, "downloading multiple projects"
 		DocumentUpdaterHandler.flushMultipleProjectsToMongo project_ids, (error) ->
 			return next(error) if error?
-			ProjectZipStreamManager.createZipStreamForMultipleProjects project_ids, (error, stream) ->
+			ProjectZipStreamManager.createZipStreamForMultipleProjectFolders project_ids, (error, stream) ->
 				return next(error) if error?
 				res.setContentDisposition(
 					'attachment',
-					{filename: "Overleaf Projects (#{project_ids.length} items).zip"}
+					{filename: "Omega Projekter (#{project_ids.length} items).zip"}
 				)
 				res.contentType('application/zip')
 				stream.pipe(res)
