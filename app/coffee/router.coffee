@@ -194,6 +194,9 @@ module.exports = class Router
 		webRouter.get  '/user/personal_info', AuthenticationController.requireLogin(), UserInfoController.getLoggedInUsersPersonalInfo
 		privateApiRouter.get  '/user/:user_id/personal_info', AuthenticationController.httpAuth, UserInfoController.getPersonalInfo
 
+		webRouter.get '/user/reconfirm', UserPagesController.renderReconfirmAccountPage
+		# for /user/reconfirm POST, see password router
+
 		webRouter.get  '/user/projects', AuthenticationController.requireLogin(), ProjectController.userProjectsJson
 		webRouter.get  '/project/:Project_id/entities', AuthenticationController.requireLogin(),
 			AuthorizationMiddleware.ensureUserCanReadProject,
@@ -225,8 +228,28 @@ module.exports = class Router
 
 		webRouter.post '/project/:Project_id/compile/stop', AuthorizationMiddleware.ensureUserCanReadProject, CompileController.stopCompile
 
-		# Used by the web download buttons, adds filename header
+		# LEGACY: Used by the web download buttons, adds filename header, TODO: remove at some future date
 		webRouter.get  '/project/:Project_id/output/output.pdf', AuthorizationMiddleware.ensureUserCanReadProject, CompileController.downloadPdf
+
+		# PDF Download button
+		webRouter.get  /^\/download\/project\/([^\/]*)\/output\/output\.pdf$/,
+			((req, res, next) ->
+				params =
+					"Project_id": req.params[0]
+				req.params = params
+				next()
+			), AuthorizationMiddleware.ensureUserCanReadProject, CompileController.downloadPdf
+
+		# PDF Download button for specific build
+		webRouter.get  /^\/download\/project\/([^\/]*)\/build\/([0-9a-f-]+)\/output\/output\.pdf$/,
+			((req, res, next) ->
+				params =
+					"Project_id": req.params[0]
+					"build_id":   req.params[1]
+				req.params = params
+				next()
+			), AuthorizationMiddleware.ensureUserCanReadProject, CompileController.downloadPdf
+
 		# Used by the pdf viewers
 		webRouter.get  /^\/project\/([^\/]*)\/output\/(.*)$/,
 			((req, res, next) ->

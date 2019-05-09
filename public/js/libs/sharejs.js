@@ -26,7 +26,7 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
  * DS207: Consider shorter variations of null checks
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
-define(['ace/ace'], function () {
+define(['ace/ace','libs/sha1'], function () {
   var append = void 0,
       bootstrapTransform = void 0,
       exports = void 0,
@@ -1303,8 +1303,15 @@ define(['ace/ace'], function () {
 
         this.emit('flipped_pending_to_inflight');
 
+        if (window.sl_debugging) {
+          // send git hash of current snapshot when debugging
+          var sha1 = CryptoJS.SHA1("blob " + this.snapshot.length + "\x00" + this.snapshot).toString()
+        }
+
         // console.log "SENDING OP TO SERVER", @inflightOp, @version
-        return this.connection.send({ doc: this.name, op: this.inflightOp, v: this.version });
+        var lastVersion = this.__lastVersion;
+        this.__lastVersion = this.version;
+        return this.connection.send({ doc: this.name, op: this.inflightOp, v: this.version, lastV: lastVersion, hash: sha1});
       }
 
       // Submit an op to the server. The op maybe held for a little while before being sent, as only one
@@ -1689,6 +1696,9 @@ define(['ace/ace'], function () {
       suppress = true;
       // All the primitives we need are already in CM's API.
       editor.replaceRange(text, editor.posFromIndex(pos));
+      // Clear CM's undo/redo history on remote edit. This prevents issues where
+      // a user can accidentally remove another user's edits
+      editor.clearHistory();
       suppress = false;
       return check();
     };
@@ -1698,6 +1708,9 @@ define(['ace/ace'], function () {
       var from = editor.posFromIndex(pos);
       var to = editor.posFromIndex(pos + text.length);
       editor.replaceRange('', from, to);
+      // Clear CM's undo/redo history on remote edit. This prevents issues where
+      // a user can accidentally remove another user's edits
+      editor.clearHistory()
       suppress = false;
       return check();
     };

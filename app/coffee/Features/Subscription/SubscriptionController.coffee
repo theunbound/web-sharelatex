@@ -150,7 +150,7 @@ module.exports = SubscriptionController =
 				return res.redirect '/user/subscription/plans'
 			res.render "subscriptions/successful_subscription",
 				title: "thank_you"
-				subscription:personalSubscription
+				personalSubscription: personalSubscription
 
 	cancelSubscription: (req, res, next) ->
 		user = AuthenticationController.getSessionUser(req)
@@ -159,7 +159,14 @@ module.exports = SubscriptionController =
 			if err?
 				logger.err err:err, user_id:user._id, "something went wrong canceling subscription"
 				return next(err)
-			res.redirect "/user/subscription"
+			# Note: this redirect isn't used in the main flow as the redirection is
+			# handled by Angular
+			res.redirect "/user/subscription/canceled"
+
+	canceledSubscription: (req, res, next)->
+		user = AuthenticationController.getSessionUser(req)
+		res.render "subscriptions/canceled_subscription",
+			title: "subscription_canceled"
 
 	cancelV1Subscription: (req, res, next) ->
 		user_id = AuthenticationController.getLoggedInUserId(req)

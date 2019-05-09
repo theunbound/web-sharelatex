@@ -24,15 +24,20 @@ div(class=titleClasses)
 			)
 				a.label.label-default.tag-label-name(
 					href,
-					ng-click="selectTag(tag)"
-				) {{tag.name}}
+					ng-click="selectTag(tag)",
+				)
+					i.fa.fa-circle(
+						aria-hidden="true"
+						ng-style="{ 'color': 'hsl({{ getHueForTagId(tag._id) }}, 70%, 45%)' }"
+					)
+					| {{tag.name}}
 				a.label.label-default.tag-label-remove(
 					href
-					ng-click="removeProjectFromTag(project, tag)"
+					ng-click="removeProjectFromTag(project, tag)",
 				) &times;
 
 .col-xs-2
-	span.owner {{ownerName()}}
+	span.owner {{getOwnerName(project)}}
 		| &nbsp;
 		i.fa.fa-question-circle.small(
 			ng-if="hasGenericOwnerName()"
@@ -87,7 +92,7 @@ if settings.overleaf
 			)
 				i.icon.fa.fa-inbox(aria-hidden="true")
 			button.btn.btn-link.action-btn(
-				ng-if="!project.archived && !isOwner()"
+				ng-if="!isOwner()"
 				aria-label=translate('leave'),
 				tooltip=translate('leave'),
 				tooltip-placement="top",

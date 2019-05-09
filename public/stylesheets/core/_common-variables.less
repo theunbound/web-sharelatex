@@ -1008,9 +1008,10 @@
 
 // Tags
 @tag-border-radius  : 0.25em;
+@tag-color          : @label-color;
 @tag-bg-color       : @label-default-bg;
-@tag-max-width      : 150px;
 @tag-bg-hover-color : darken(@label-default-bg, 10%);
+@tag-max-width      : 150px;
 @tag-top-adjustment : -2px;
 @labels-font-size   : 75%;
 
@@ -1030,6 +1031,8 @@
 @history-entry-selected-pseudo-label-color: @green;
 @history-entry-day-bg                     : @gray;
 @history-entry-selected-bg                : @red;
+@history-entry-handle-bg                  : darken(@history-entry-selected-bg, 10%);
+@history-entry-handle-height              : 8px;
 @history-base-color                       : @gray-light;
 @history-highlight-color                  : @gray;
 @history-toolbar-bg-color                 : @toolbar-alt-bg-color;

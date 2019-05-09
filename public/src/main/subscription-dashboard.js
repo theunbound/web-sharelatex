@@ -73,7 +73,11 @@ define(['base'], function(App) {
               if (isNaN(taxAmmount)) {
                 taxAmmount = 0
               }
-              resolve(`${currencySymbol}${totalPriceExTax + taxAmmount}`)
+              let total = totalPriceExTax + taxAmmount
+              if (total % 1 !== 0) {
+                total = total.toFixed(2)
+              }
+              resolve(`${currencySymbol}${total}`)
             })
         })
       }
@@ -231,7 +235,7 @@ define(['base'], function(App) {
       $scope.inflight = true
       return $http
         .post('/user/subscription/cancel', body)
-        .then(() => location.reload())
+        .then(() => (location.href = '/user/subscription/canceled'))
         .catch(() => console.log('something went wrong changing plan'))
     }
 

@@ -346,7 +346,7 @@ define([
         if (inflightOp == null && pendingOp == null) {
           // there's nothing going on, this is ok.
           saved = true
-          sl_console.log('[pollSavedStatus] no inflight or pending ops')
+          sl_console.logOnce('[pollSavedStatus] no inflight or pending ops')
         } else if (inflightOp != null && inflightOp === this.oldInflightOp) {
           // The same inflight op has been sitting unacked since we
           // last checked, this is bad.
@@ -665,6 +665,10 @@ define([
         }
         meta.doc_id = this.doc_id
         sl_console.log('ShareJS error', error, meta)
+        if (error.message === 'no project_id found on client') {
+          sl_console.log('ignoring error, will wait to join project')
+          return
+        }
         if (typeof ga === 'function') {
           ga(
             'send',
