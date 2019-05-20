@@ -3,6 +3,7 @@ logger = require("logger-sharelatex")
 projectDeleter = require("./ProjectDeleter")
 projectDuplicator = require("./ProjectDuplicator")
 projectCreationHandler = require("./ProjectCreationHandler")
+ProjectLocator = require("./ProjectLocator")
 editorController = require("../Editor/EditorController")
 metrics = require('metrics-sharelatex')
 User = require('../../models/User').User
@@ -129,23 +130,47 @@ module.exports = ProjectController =
 
 	newProject: (req, res, next)->
 		user_id = AuthenticationController.getLoggedInUserId(req)
+		console.log {loggedInUser: user_id, sessionUser: AuthenticationController.getSessionUser(req)}, "PANG"
 		projectName = req.body.projectName?.trim()
 		template = req.body.template
-		logger.log user: user_id, projectType: template, name: projectName, "creating project"
-		async.waterfall [
-			(cb)->
-				if template == 'example'
-					projectCreationHandler.createExampleProject user_id, projectName, cb
-				else
-					projectCreationHandler.createBasicProject user_id,
-						projectName,
-						if template? and template != "none" then template else 'mainbasic',
-						cb
-		], (err, project)->
+		finalise = (err, project)->
 			return next(err) if err?
 			logger.log project: project, user: user_id, name: projectName, templateType: template, "created project"
 			res.send {project_id:project._id}
-
+			
+		if template.id?
+			logger.log user: user_id, projectOriginalId: template.id, name: projectName, "creating project by cloning"
+			res.setTimeout 5 * 60 * 1000 # allow extra time for the copy to complete
+			async.waterfall [
+				(cb) ->
+					User.findById user_id, "first_name last_name", cb
+				(user, cb) ->
+					projectDuplicator.duplicateWithTransforms(
+						AuthenticationController.getSessionUser(req),
+						template.id,
+						projectName,
+						{
+						docTransform: (string) ->
+							projectCreationHandler._interpolateTemplate projectName, user, string
+						rootDocNameTransform: (string) ->
+							projectName.replace(
+								/(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g,
+								(match, index) ->
+									if (+match == 0) then return ""
+									else if index == 0 then match.toLowerCase() else match.toUpperCase()
+							) + ".tex"
+						},
+						cb)
+			], finalise
+		else
+			logger.log user: user_id, projectType: template, name: projectName, "creating project from template"
+			if template == 'example'
+				projectCreationHandler.createExampleProject user_id, projectName, finalise
+			else
+				projectCreationHandler.createBasicProject user_id,
+					projectName,
+					if template? and template != "none" then template else 'mainbasic',
+					finalise
 
 	renameProject: (req, res, next)->
 		project_id = req.params.Project_id

@@ -7,12 +7,14 @@ Project = require('../../models/Project').Project
 Folder = require('../../models/Folder').Folder
 ProjectEntityUpdateHandler = require('./ProjectEntityUpdateHandler')
 ProjectDetailsHandler = require('./ProjectDetailsHandler')
+ProjectLocator = require('./ProjectLocator')
 HistoryManager = require('../History/HistoryManager')
 User = require('../../models/User').User
 fs = require('fs')
 Path = require "path"
 _ = require "underscore"
 AnalyticsManger = require("../Analytics/AnalyticsManager")
+ProjectDuplicator = require("./ProjectDuplicator")
 
 module.exports = ProjectCreationHandler =
 
@@ -59,19 +61,26 @@ module.exports = ProjectCreationHandler =
 			project.imageName ?= Settings.currentImageName
 		project.rootFolder[0] = rootFolder
 
-		# Globalize projects
-		User.find _id: {$ne: owner_id}, {_id: 1}, (err, docs) ->
-			return callback(err) if err?
-			pushCollabs = (doc) ->
-				project.collaberator_refs.push(doc._id)
-			pushCollabs doc for doc in docs
-		
-		User.findById owner_id, "ace.spellCheckLanguage", (err, user)->
-			if user? # It's possible the owner_id is a UserStub
-				project.spellCheckLanguage = user.ace.spellCheckLanguage
+		async.parallel([
+			# Globalize projects
+			(cb) ->
+				User.find _id: {$ne: owner_id}, {_id: 1}, (err, docs) ->
+					return cb(err) if err?
+					pushCollabs = (doc) ->
+						project.collaberator_refs.push(doc._id)
+					pushCollabs doc for doc in docs
+					cb null,
+			(cb) ->
+				User.findById owner_id, "ace.spellCheckLanguage", (err, user)->
+					if user? # It's possible the owner_id is a UserStub
+						project.spellCheckLanguage = user.ace.spellCheckLanguage
+					cb null
+		], (error, results) ->
+			return callback error if error?
 			project.save (err)->
 				return callback(err) if err?
 				callback err, project
+		)
 
 	createProjectFromSnippet : (owner_id, projectName, docLines, callback = (error, project) ->)->
 		@createBlankProject owner_id, projectName, (error, project)->
@@ -80,13 +89,13 @@ module.exports = ProjectCreationHandler =
 
 	createBasicProject :  (owner_id, projectName, template = "mainbasic", callback = (error, project) ->)->
 		self = @
+		mainName = projectName.replace /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g,
+			(match, index) ->
+				if (+match == 0) then return ""
+				else if index == 0 then match.toLowerCase() else match.toUpperCase()
 		@createBlankProject owner_id, projectName, (error, project)->
 			return callback(error) if error?
 			self._buildTemplate "#{template}.tex", owner_id, projectName, (error, docLines)->
-				mainName = projectName.replace /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g, (match, index) ->
-					if (+match == 0) then return ""
-					else if index == 0 then match.toLowerCase() else match.toUpperCase()
-				mainName = mainName + ".tex"
 				return callback(error) if error?
 				ProjectCreationHandler._createRootDoc project, owner_id, docLines, mainName, callback
 
@@ -119,20 +128,25 @@ module.exports = ProjectCreationHandler =
 				callback(error, project)
 
 	_buildTemplate: (template_name, user_id, project_name, callback = (error, output) ->)->
+		self = @
 		User.findById user_id, "first_name last_name", (error, user)->
 			return callback(error) if error?
-			monthNames = [ "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" ]
 
 			templatePath = Path.resolve(__dirname + "/../../../templates/project_files/#{template_name}")
 			fs.readFile templatePath, (error, template) ->
 				return callback(error) if error?
-				data =
-					project_name: project_name
-					user: user
-					year: new Date().getUTCFullYear()
-					month: monthNames[new Date().getUTCMonth()]
-				output = _.template(template.toString(), data)
+				output = self._interpolateTemplate project_name, user, template.toString()
 				callback null, output.split("\n")
+
+	_interpolateTemplate: (project_name, user, string) ->
+		monthNames = [ "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" ]
+		data =
+			project_name: project_name
+			user: user
+			year: new Date().getUTCFullYear()
+			month: monthNames[new Date().getUTCMonth()]
+		_.template(string, data)
+		
 
 metrics.timeAsyncMethod(
 	ProjectCreationHandler, 'createBlankProject',

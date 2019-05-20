@@ -9,28 +9,38 @@ ProjectGetter = require("./ProjectGetter")
 _ = require('underscore')
 async = require('async')
 logger = require("logger-sharelatex")
+User = require('../../models/User').User
 
 
-module.exports = ProjectDuplicator =
+module.exports = ProjectDuplicator = 
 
-	_copyDocs: (owner_id, newProject, originalRootDoc, originalFolder, desFolder, docContents, callback)->
-		setRootDoc = _.once (doc_id)->
-			ProjectEntityUpdateHandler.setRootDoc newProject._id, doc_id
-		docs = originalFolder.docs or []
-		jobs = docs.map (doc)->
-			return (cb)->
-				if !doc?._id?
-					return callback()
-				content = docContents[doc._id.toString()]
-				ProjectEntityUpdateHandler.addDoc newProject._id, desFolder._id, doc.name, content.lines, owner_id, (err, newDoc)->
-					if err?
-						logger.err err:err, "error copying doc"
-						return callback(err)
-					if originalRootDoc? and newDoc.name == originalRootDoc.name
-						setRootDoc newDoc._id
-					cb()
-
-		async.series jobs, callback
+	_copyDocs: (owner_id, newProject, originalRootDoc, originalFolder, desFolder, docContents,
+		rootDocNameTransform = (rdn) ->
+			rdn
+		callback)->
+			setRootDoc = _.once (doc_id)->
+				ProjectEntityUpdateHandler.setRootDoc newProject._id, doc_id
+			docName = (name) ->	
+				if originalRootDoc? and name == originalRootDoc.name
+					rootDocNameTransform name
+				else
+					name
+			docs = originalFolder.docs or []
+			jobs = docs.map (doc)->
+				return (cb)->
+					if !doc?._id?
+						return callback()
+					content = docContents[doc._id.toString()]
+					ProjectEntityUpdateHandler.addDoc newProject._id, desFolder._id, docName(doc.name), content.lines, owner_id, (err, newDoc)->
+						if err?
+							logger.err err:err, "error copying doc"
+							return callback(err)
+						if originalRootDoc? and newDoc.name == rootDocNameTransform originalRootDoc.name
+							logger.log {originalRootDoc: originalRootDoc.name, newRootDoc: newDoc.name}
+							setRootDoc newDoc._id
+						cb()
+	
+			async.series jobs, callback
 
 	_copyFiles: (owner_id, newProject, originalProject_id, originalFolder, desFolder, callback)->
 		fileRefs = originalFolder.fileRefs or []
@@ -51,7 +61,7 @@ module.exports = ProjectDuplicator =
 			return callback()
 
 
-	_copyFolderRecursivly: (owner_id, newProject_id, originalProject_id, originalRootDoc, originalFolder, desFolder, docContents, callback)->
+	_copyFolderRecursivly: (owner_id, newProject_id, originalProject_id, originalRootDoc, originalFolder, desFolder, docContents, rootDocNameTransform, callback)->
 		ProjectGetter.getProject newProject_id, {rootFolder:true, name:true}, (err, newProject)->
 			if err?
 				logger.err project_id:newProject_id, "could not get project"
@@ -70,12 +80,22 @@ module.exports = ProjectDuplicator =
 			jobs.push (cb)->
 				ProjectDuplicator._copyFiles owner_id, newProject, originalProject_id, originalFolder, desFolder, cb
 			jobs.push (cb)->
-				ProjectDuplicator._copyDocs owner_id, newProject, originalRootDoc, originalFolder, desFolder, docContents, cb
+				ProjectDuplicator._copyDocs owner_id, newProject, originalRootDoc, originalFolder, desFolder, docContents, rootDocNameTransform, cb
 
 			async.series jobs, callback
 
 	duplicate: (owner, originalProject_id, newProjectName, callback)->
+		ProjectDuplicator.duplicateWithTransforms(
+			owner, originalProject_id, newProjectName, {}, callback
+		)
 
+	duplicateWithTransforms: (
+		owner,
+		originalProject_id,
+		newProjectName,
+		transforms,
+		callback
+	)->
 		jobs = 
 			flush: (cb)->
 				DocumentUpdaterHandler.flushProjectToMongo originalProject_id, cb
@@ -91,6 +111,7 @@ module.exports = ProjectDuplicator =
 			if err?
 				logger.err err:err, originalProject_id:originalProject_id, "error duplicating project reading original project"
 				return callback(err)
+			logger.log results, "Dupling this project"
 			{originalProject, originalRootDoc, docContentsArray} = results
 
 			originalRootDoc = originalRootDoc?[0]
@@ -98,6 +119,10 @@ module.exports = ProjectDuplicator =
 			docContents = {}
 			for docContent in docContentsArray
 				docContents[docContent._id] = docContent
+				if transforms.docTransform? and transforms.docTransform instanceof Function
+					docContents[docContent._id].lines = (
+						transforms.docTransform line for line in docContents[docContent._id].lines
+						)
 
 			# Now create the new project, cleaning it up on failure if necessary
 			projectCreationHandler.createBlankProject owner._id, newProjectName, (err, newProject) ->
@@ -109,7 +134,14 @@ module.exports = ProjectDuplicator =
 					setCompiler: (cb) ->
 						projectOptionsHandler.setCompiler newProject._id, originalProject.compiler, cb
 					copyFiles: (cb) ->
-						ProjectDuplicator._copyFolderRecursivly owner._id, newProject._id, originalProject_id, originalRootDoc, originalProject.rootFolder[0], newProject.rootFolder[0], docContents, cb
+						ProjectDuplicator._copyFolderRecursivly owner._id, newProject._id, originalProject_id, originalRootDoc, originalProject.rootFolder[0], newProject.rootFolder[0], docContents, transforms.rootDocNameTransform, cb
+					universalCollab: (cb) ->
+						User.find _id: {$ne: owner._id}, {_id: 1}, (err, docs) ->
+							return cb(err) if err?
+							newProject.collaborator_refs =
+								(doc._id for doc in docs)[0...0] = newProject.collaborator_refs
+							cb null
+
 
 				# Copy the contents of the original project into the new project
 				async.series copyJobs, (err) ->

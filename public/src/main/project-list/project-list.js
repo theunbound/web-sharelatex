@@ -152,6 +152,11 @@ define(['base', 'main/project-list/services/project-list'], function(App) {
       }
     }
 
+    $scope.skabelonProjekter = $scope.tags
+        .filter( e => (e["name"] == "Skabeloner") )[0]["project_ids"]
+          .map( e => projectsById[e] );
+    $scope.harSkabeloner = ($scope.skabelonProjekter.length > 0);
+
     const markTagAsSelected = id =>
       (() => {
         const result = []
@@ -565,8 +570,9 @@ define(['base', 'main/project-list/services/project-list'], function(App) {
         })
     }
 
-    $scope.openCloneProjectModal = function() {
+    $scope.openCloneProjectModal = function(
       project = $scope.getFirstSelectedProject()
+    ) {
       if (project == null) {
         return
       }
