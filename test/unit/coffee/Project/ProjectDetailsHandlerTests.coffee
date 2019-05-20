@@ -104,7 +104,7 @@ describe 'ProjectDetailsHandler', ->
 
 		it "should transfer ownership of the project", (done) ->
 			@handler.transferOwnership 'abc', '123', () =>
-				sinon.assert.calledWith(@ProjectModel.update, {_id: 'abc'})
+				sinon.assert.calledWith(@ProjectModel.update, {_id: 'abc'}, sinon.match({$set: {name: 'teapot'}}))
 				done()
 
 		it "should flush the project to tpds", (done) ->
@@ -117,6 +117,10 @@ describe 'ProjectDetailsHandler', ->
 				sinon.assert.calledWith(@handler.generateUniqueName, '123', @project.name)
 				done()
 
+		it "should append the supplied suffix to the project name, if passed", (done) ->
+			@handler.transferOwnership 'abc', '123', ' wombat', () =>
+				sinon.assert.calledWith(@handler.generateUniqueName, '123', "#{@project.name} wombat")
+				done()
 
 	describe "getProjectDescription", ->
 

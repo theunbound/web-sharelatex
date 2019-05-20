@@ -78,6 +78,8 @@ UserSchema = new Schema
 		accessToken: { type: String }
 		refreshToken: { type: String }
 	awareOfV2: { type:Boolean, default: false }
+	thirdPartyIdentifiers: { type: Array, default: [] }
+	migratedAt: { type: Date }
 
 conn = mongoose.createConnection(Settings.mongo.url, {
 	server: {poolSize: Settings.mongo.poolSize || 10},

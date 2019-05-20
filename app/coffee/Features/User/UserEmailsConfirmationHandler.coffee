@@ -5,6 +5,7 @@ settings = require 'settings-sharelatex'
 Errors = require "../Errors/Errors"
 logger = require "logger-sharelatex"
 UserUpdater = require "./UserUpdater"
+UserGetter = require "./UserGetter"
 
 ONE_YEAR_IN_S = 365 * 24 * 60 * 60
 
@@ -13,6 +14,11 @@ module.exports = UserEmailsConfirmationHandler =
 		if arguments.length == 3
 			callback = emailTemplate
 			emailTemplate = 'confirmEmail'
+
+		# when force-migrating accounts to v2 from v1, we don't want to send confirmation messages -
+		# setting this env var allows us to turn this behaviour off
+		return callback(null) if process.env['SHARELATEX_NO_CONFIRMATION_MESSAGES']?
+
 		email = EmailHelper.parseEmail(email)
 		return callback(new Error('invalid email')) if !email?
 		data = {user_id, email}
@@ -34,4 +40,8 @@ module.exports = UserEmailsConfirmationHandler =
 			logger.log {data, user_id, email, token_start: token.slice(0,8)}, 'found data for email confirmation'
 			if !user_id? or email != EmailHelper.parseEmail(email)
 				return callback(new Errors.NotFoundError('invalid data'))
-			UserUpdater.confirmEmail user_id, email, callback
+			UserGetter.getUser user_id, {}, (error, user) ->
+				return callback(error) if error?
+				unless user?._id
+					return callback(new Errors.NotFoundError('user not found'))
+				UserUpdater.confirmEmail user_id, email, callback
