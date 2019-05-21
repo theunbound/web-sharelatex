@@ -299,11 +299,11 @@ module.exports = class Router
 		webRouter.get "/project/:Project_id/sync/pdf", AuthorizationMiddleware.ensureUserCanReadProject, CompileController.proxySyncPdf
 		webRouter.get "/project/:Project_id/wordcount", AuthorizationMiddleware.ensureUserCanReadProject, CompileController.wordCount
 
-		webRouter.delete '/Project/:Project_id', AuthorizationMiddleware.ensureUserCanAdminProject, ProjectController.deleteProject
-		webRouter.post '/Project/:Project_id/restore', AuthorizationMiddleware.ensureUserCanAdminProject, ProjectController.restoreProject
+		webRouter.delete '/Project/:Project_id', AuthorizationMiddleware.ensureUserCanWriteProjectContent, ProjectController.deleteProject
+		webRouter.post '/Project/:Project_id/restore', AuthorizationMiddleware.ensureUserCanWriteProjectContent, ProjectController.restoreProject
 		webRouter.post '/Project/:Project_id/clone', AuthorizationMiddleware.ensureUserCanReadProject, ProjectController.cloneProject
 
-		webRouter.post '/project/:Project_id/rename', AuthorizationMiddleware.ensureUserCanAdminProject, ProjectController.renameProject
+		webRouter.post '/project/:Project_id/rename', AuthorizationMiddleware.ensureUserCanWriteProjectContent, ProjectController.renameProject
 
 		webRouter.get  "/project/:Project_id/updates", AuthorizationMiddleware.ensureUserCanReadProject, HistoryController.selectHistoryApi, HistoryController.proxyToHistoryApiAndInjectUserDetails
 		webRouter.get  "/project/:Project_id/doc/:doc_id/diff", AuthorizationMiddleware.ensureUserCanReadProject, HistoryController.selectHistoryApi, HistoryController.proxyToHistoryApi

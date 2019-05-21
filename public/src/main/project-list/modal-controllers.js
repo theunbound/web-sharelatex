@@ -141,15 +141,11 @@ define(['base'], function(App) {
     $timeout,
     projects
   ) {
-    $scope.projectsToDelete = projects.filter(
-      project => project.accessLevel === 'owner'
-    )
-    $scope.projectsToLeave = projects.filter(
-      project => project.accessLevel !== 'owner'
-    )
+    $scope.projectsToDelete = projects;
+    $scope.projectsToLeave = [];
     $scope.projectsToArchive = projects.filter(
-      project => project.accessLevel === 'owner' && !project.archived
-    )
+      project => !project.archived
+    );
 
     if (
       $scope.projectsToLeave.length > 0 &&
@@ -181,7 +177,7 @@ define(['base'], function(App) {
 
     $scope.delete = () => $modalInstance.close()
 
-    return ($scope.cancel = () => $modalInstance.dismiss('cancel'))
+    $scope.cancel = () => $modalInstance.dismiss('cancel')
   })
 
   App.controller('UploadProjectModalController', function(

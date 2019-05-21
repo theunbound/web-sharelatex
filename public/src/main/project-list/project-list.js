@@ -212,9 +212,7 @@ define(['base', 'main/project-list/services/project-list'], function(App) {
       $scope.selectedProjects = $scope.projects.filter(
         project => project.selected
       )
-      $scope.isArchiveableProjectSelected = $scope.selectedProjects.some(
-        project => window.user_id === project.owner._id
-      )
+      $scope.isArchiveableProjectSelected = $scope.selectedProjects.length > 0;
     }
 
     $scope.getSelectedProjects = () => $scope.selectedProjects
@@ -626,26 +624,14 @@ define(['base', 'main/project-list/services/project-list'], function(App) {
     }
 
     $scope.archiveOrLeaveProject = function(project) {
-      if (project.accessLevel === 'owner') {
-        project.archived = true
-        queuedHttp({
-          method: 'DELETE',
-          url: `/project/${project.id}`,
-          headers: {
-            'X-CSRF-Token': window.csrfToken
-          }
-        })
-      } else {
-        $scope._removeProjectFromList(project)
-
-        queuedHttp({
-          method: 'POST',
-          url: `/project/${project.id}/leave`,
-          headers: {
-            'X-CSRF-Token': window.csrfToken
-          }
-        })
-      }
+      project.archived = true
+      queuedHttp({
+        method: 'DELETE',
+        url: `/project/${project.id}`,
+        headers: {
+          'X-CSRF-Token': window.csrfToken
+        }
+      })
     }
 
     $scope.getValueForCurrentPredicate = function(project) {
@@ -773,8 +759,7 @@ define(['base', 'main/project-list/services/project-list'], function(App) {
     queuedHttp,
     ProjectListService
   ) {
-    $scope.shouldDisableCheckbox = project =>
-      $scope.filter === 'archived' && project.accessLevel !== 'owner'
+    $scope.shouldDisableCheckbox = project => false;
 
     $scope.projectLink = function(project) {
       if (
