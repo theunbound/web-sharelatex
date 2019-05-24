@@ -16,6 +16,7 @@ ClsiFormatChecker = require("./ClsiFormatChecker")
 DocumentUpdaterHandler = require "../DocumentUpdater/DocumentUpdaterHandler"
 Metrics = require('metrics-sharelatex')
 Errors = require ('../Errors/Errors')
+TagsHandler = require "../Tags/TagsHandler"
 
 module.exports = ClsiManager =
 
@@ -30,7 +31,7 @@ module.exports = ClsiManager =
 				callback(error, status, result...)
 
 	sendRequestOnce: (project_id, user_id, options = {}, callback = (error, status, outputFiles, clsiServerId, validationProblems) ->) ->
-		ClsiManager._buildRequest project_id, options, (error, req) ->
+		ClsiManager._buildRequestWithTagsEnvironment project_id, options, (error, req) ->
 			if error?
 				if error.message is "no main file specified"
 					return callback(null, "validation-problems", null, null, {mainFile:error.message})
@@ -121,8 +122,6 @@ module.exports = ClsiManager =
 			newBackendCompileTime = results.newBackend?.finishTime
 			logger.log {statusCodeSame, timeDifference, currentCompileTime, newBackendCompileTime, project_id}, "both clsi requests returned"
 
-
-
 	_makeNewBackendRequest: (project_id, baseOpts, callback)->
 		if !Settings.apis.clsi_new?.url?
 			return callback()
@@ -184,6 +183,56 @@ module.exports = ClsiManager =
 		return outputFiles
 
 	VALID_COMPILERS: ["pdflatex", "latex", "xelatex", "lualatex"]
+
+	_buildRequestWithTagsEnvironment: (project_id, options={}, callback = (error, request) ->) ->
+		localError = Error "Stop _buildRequestWithTagsEnvironment"
+		self = @
+		asyncGetAllTags = (user_id) ->
+			new Promise (resolve, reject) ->
+				TagsHandler.getAllTags user_id, (err, allTags, groupedByProject) ->
+					return reject err if err?
+					resolve [allTags, groupedByProject]
+		asyncBuildRequest = (project_id, options) =>
+			new Promise (resolve, reject) =>
+				@_buildRequest project_id, options, (error, request) ->
+					return reject error if error?
+					resolve request
+
+		logger.log project_id: project_id, options: options, "Creating combined compile request for compile environment."
+		projectRequest = asyncBuildRequest project_id, options
+		asyncGetAllTags 1 # TagsHandler.getAllTags doesn't actually need an argument, but we'll give it a dummy one to be extra safe
+			.then (tags) ->
+				logger.log tagNames: (tag.name for tag in tags[0]), "Tag names recieved"
+				result = []
+				result = result.concat tag.project_ids for tag in tags[0] when tag.name == "Kompilering"
+				Promise.all [projectRequest, (asyncBuildRequest environmentId, options for environmentId in result)...]
+			.then (requests) ->
+				logger.log requestRootResourcePath: (request.compile.rootResourcePath for request in requests), "Requests to combine."
+				(
+					if options.syncType? and environmentRequest.compile.options.syncType != requests[0].compile.options.syncType
+						# That's no good. Try again.
+						logger.log mainSyncType: requests[0].compile.options.syncType
+							environSyncType: environmentRequest.compile.options.syncType
+							combiningProjectsCount: requests.length
+							"Mismatching sync type while combining projects for compile environment. Retrying with 'full'."
+						options.syncType = "full"
+						self._buildRequestWithTagsEnvironment project_id, options, callback
+						throw localError
+
+					# Concaternate resource entries from the environment includes
+					requests[0].compile.resources = requests[0].compile.resources.concat environmentRequest.compile.resources
+				) for environmentRequest in requests[1..]
+				# Derive a combined state hash
+				logger.log {
+					projectCount: requests.length,
+					resourcesCount: requests[0].compile.resources.length
+					}, "Created combined compile request for compile environment."
+				requests[0].compile.options.syncState = ClsiStateManager.combineHashes(
+					(req.compile.options.syncState for req in requests)... )
+				return callback null, requests[0]
+			.catch (error) ->
+				unless error == localError then	callback error
+
 
 	_buildRequest: (project_id, options={}, callback = (error, request) ->) ->
 		ProjectGetter.getProject project_id, {compiler: 1, rootDoc_id: 1, imageName: 1, rootFolder:1}, (error, project) ->

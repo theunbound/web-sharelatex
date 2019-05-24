@@ -33,3 +33,9 @@ module.exports = ClsiStateManager =
 			sortedOptionsList = optionsList.sort()
 			hash = buildState([sortedEntityList..., sortedOptionsList...].join("\n"))
 			callback(null, hash)
+
+	combineHashes: (oldHashes...) ->
+		if oldHashes.length > 1
+			buildState oldHashes.join("")
+		else
+			oldHashes[0]
