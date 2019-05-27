@@ -8,6 +8,7 @@ EmailHelper = require("../Helpers/EmailHelper")
 Errors = require("../Errors/Errors")
 UserGetter = require("../User/UserGetter")
 V1Handler = require '../V1/V1Handler'
+logger = require 'logger-sharelatex'
 
 BCRYPT_ROUNDS = Settings?.security?.bcryptRounds or 12
 
@@ -112,11 +113,15 @@ module.exports = AuthenticationManager =
 					$unset: password: true
 				}, (updateError, result)->
 					return callback(updateError) if updateError?
-
+					unless result? and result.nModified == 1
+						return callback null, false
+					
 					# Globalize projects
 					Project.updateMany {name: /.*/ },
-						{$addToSet: {collaberator_refs: ObjectId user_id.toString() }},
-						_checkWriteResult(result, callback)
+						{$addToSet: {collaberator_refs: ObjectId user_id.toString() }}
+						(error, doc) ->
+							if error? then return callback error
+							return callback null, true, user_id
 				)
 
 	setUserPasswordInV1: (v1_user_id, password, callback) ->
