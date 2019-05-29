@@ -1,7 +1,7 @@
 Path  = require "path"
 async = require "async"
 Settings = require "settings-sharelatex"
-request = require('request')
+httpRequest = require('request')
 Project = require("../../models/Project").Project
 ProjectGetter = require("../Project/ProjectGetter")
 ProjectEntityHandler = require("../Project/ProjectEntityHandler")
@@ -99,7 +99,7 @@ module.exports = ClsiManager =
 						return callback(err)
 					opts.jar = jar
 					timer = new Metrics.Timer("compile.currentBackend")
-					request opts, (err, response, body)->
+					httpRequest opts, (err, response, body)->
 						timer.done()
 						Metrics.inc "compile.currentBackend.response.#{response?.statusCode}"
 						if err?
@@ -133,7 +133,7 @@ module.exports = ClsiManager =
 				return callback(err)
 			opts.jar = jar
 			timer = new Metrics.Timer("compile.newBackend")
-			request opts, (err, response, body)->
+			httpRequest opts, (err, response, body)->
 				timer.done()
 				if err?
 					logger.warn err:err, project_id:project_id, url:opts?.url, "error making request to new clsi"
@@ -278,7 +278,7 @@ module.exports = ClsiManager =
 		ClsiCookieManager.getCookieJar project_id, (err, jar)->
 			return callback(err) if err?
 			options = { url: url, method: "GET", timeout: 60 * 1000, jar : jar }
-			readStream = request(options)
+			readStream = httpRequest(options)
 			callback(null, readStream)
 
 	_buildRequestFromDocupdater: (project_id, options, project, projectStateHash, docUpdaterDocs, callback = (error, request) ->) ->

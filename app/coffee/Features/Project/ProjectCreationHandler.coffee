@@ -120,7 +120,8 @@ module.exports = ProjectCreationHandler =
 				callback(error, project)
 
 	_createRootDoc: (project, owner_id, docLines, mainName = "main", callback = (error, project) ->)->
-		ProjectEntityUpdateHandler.addDoc project._id, project.rootFolder[0]._id, "#{mainName}.tex", docLines, owner_id, (error, doc)->
+		mainName = mainName + ".tex" unless mainName.includes "."
+		ProjectEntityUpdateHandler.addDoc project._id, project.rootFolder[0]._id, mainName, docLines, owner_id, (error, doc)->
 			if error?
 				logger.err err:error, "error adding root doc when creating project"
 				return callback(error)

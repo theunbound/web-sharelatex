@@ -1,6 +1,7 @@
 mongoose = require('mongoose')
 Settings = require 'settings-sharelatex'
 logger = require('logger-sharelatex')
+RevysterHelper = require '../Features/Helpers/RevysterHelper'
 
 mongoose.connect(Settings.mongo.url, {
 	server: {poolSize: 10},
@@ -9,6 +10,7 @@ mongoose.connect(Settings.mongo.url, {
 
 mongoose.connection.on 'connected', () ->
 	logger.log {url:Settings.mongo.url}, 'mongoose default connection open'
+	RevysterHelper.initDb()
 
 mongoose.connection.on 'error', (err) ->
 	logger.err err:err, 'mongoose error on default connection';

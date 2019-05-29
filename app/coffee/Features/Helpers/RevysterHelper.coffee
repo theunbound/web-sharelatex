@@ -1,5 +1,10 @@
 https = require "https"
 logger = require "logger-sharelatex"
+TagsHandler = require "../Tags/TagsHandler"
+ProjectCreationHandler = require "../Project/ProjectCreationHandler"
+UserGetter = require "../User/UserGetter"
+fs = require("fs").promises
+path = require "path"
 
 module.exports = RevysterHelper =
 
@@ -69,3 +74,80 @@ module.exports = RevysterHelper =
 		logger.log "Calling " + options.hostname + options.path + " for revyster's roster."
 		req.write queryBody
 		req.end
+
+	initDb: () ->
+		parachute = Error "initDb parachute"
+		userId = ""
+		callbackToPromise = (funcWithCallback, params...) ->
+			new Promise (resolve, reject) ->
+				funcWithCallback.apply null, [params..., (err, outputs...) ->
+					return reject err if err?
+					resolve [outputs...]
+				]
+		asyncGetUser = (query, projection) ->
+			new Promise (resolve, reject) ->
+				UserGetter.getUser query, projection, (err, user) ->
+					return reject err if err?
+					resolve user
+		asyncGetAllTags = (user_id) ->
+			new Promise (resolve, reject) ->
+				TagsHandler.getAllTags user_id, (err, allTags, groupedByProject) ->
+					return reject err if err?
+					resolve [allTags, groupedByProject]
+		createSingleDocumentProject = (docName) ->
+			# returns Promise -> project
+			# We look for docs in /app/templates/project_files
+			docPath = path.resolve( __dirname + "/../../../templates/project_files/#{docName}")
+			logger.log docPath: docPath
+			docLines = fs.readFile docPath, 'utf8'
+				.then (doc) ->
+					doc.split '\n'
+
+			newProject = callbackToPromise ProjectCreationHandler.createBlankProject, userId, docName.replace ".tex", ""
+			logger.log docLines: typeof docLines, newProject: typeof newProject, "createSingleProjectDocument creating root doc."
+			Promise.all [docLines, newProject]
+				.then ([docLines, [newProject]]) ->
+					callbackToPromise ProjectCreationHandler._createRootDoc, newProject, userId, docLines, docName
+				.catch (error) -> logger.err error: error, stError: error.toString()
+
+		logger.log "Performing database initialisation for Revy-use."
+		callbackToPromise UserGetter.getUser, {isAdmin: true}, {}
+			.then ([user]) -> 	# callbackToPromise returns an array, which gets destructured by the square bracket.
+				unless user?
+					logger.log "No admin user to own anything yet. Skipping initialisation."
+					throw parachute
+				userId = user._id.toString()
+				asyncGetAllTags 1
+			.then (tags) ->
+				tagNames = (tag.name for tag in tags[0])
+				logger.log tagNames: tagNames, "Found tags."
+				taskArray = []
+				unless "Kompilering" in tagNames
+					logger.log tagNames: tagNames, "Tag 'Kompilering' not found. Creating."
+					taskArray.push( callbackToPromise( TagsHandler.createTag, userId, "Kompilering" )
+						.then ([tag]) ->
+							logger.log newTag: tag, "New tag"
+							Promise.all [tag, createSingleDocumentProject "revy.sty"]
+						.then ([tag, [project]]) ->
+							logger.log userId: userId, tagId: tag._id, project: project, "New project"
+							callbackToPromise TagsHandler.addProjectToTag, userId, tag._id, project._id
+					)
+				unless "Skabeloner" in tagNames
+					logger.log tagNames: tagNames, "Tag 'Skabeloner' not found. Creating."
+					taskArray.push( callbackToPromise TagsHandler.createTag, userId, "Skabeloner"
+						.then ([tag]) -> Promise.all (
+							(createSingleDocumentProject docName
+								.then ([project]) ->
+									logger.log tag: tag, docName: docName, "Adding to tag"
+									callbackToPromise TagsHandler.addProjectToTag, userId, tag._id, project._id
+							) for docName in ["Sang.tex", "Sketch.tex"]
+							# Have I gone mad!? Probably...
+						)
+					)
+				if taskArray.length == 0
+					logger.log "No init seems to need doing."
+				return Promise.all taskArray
+			.catch (error) ->
+				unless error == parachute
+					# Just let it go?
+					logger.err error: error, stError: error.toString(), "RevysterInitDb"
