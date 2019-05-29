@@ -4,6 +4,7 @@ ProjectDeleter = require("../Project/ProjectDeleter")
 logger = require("logger-sharelatex")
 SubscriptionHandler = require("../Subscription/SubscriptionHandler")
 SubscriptionUpdater = require("../Subscription/SubscriptionUpdater")
+SubscriptionLocator = require("../Subscription/SubscriptionLocator")
 UserMembershipsHandler = require("../UserMembership/UserMembershipsHandler")
 async = require("async")
 InstitutionsAPI = require("../Institutions/InstitutionsAPI")
@@ -21,9 +22,11 @@ module.exports = UserDeleter =
 			return callback(new Errors.NotFoundError("user not found")) unless user?
 			async.series([
 				(cb) ->
+					UserDeleter._ensureCanDeleteUser user, cb
+				(cb) ->
 					UserDeleter._cleanupUser user, cb
 				(cb) ->
-					ProjectDeleter.softDeleteUsersProjectsForMigration user._id, cb
+					ProjectDeleter.deleteUsersProjects user._id, cb
 				(cb) ->
 					user.deletedAt = new Date()
 					db.usersDeletedByMigration.insert user, cb
@@ -40,6 +43,8 @@ module.exports = UserDeleter =
 				return callback(err)
 			logger.log user:user, "deleting user"
 			async.series [
+				(cb) ->
+					UserDeleter._ensureCanDeleteUser user, cb
 				(cb)->
 					UserDeleter._cleanupUser user, cb
 				(cb)->
@@ -55,7 +60,9 @@ module.exports = UserDeleter =
 		return callback(new Error("no user supplied")) unless user?
 		async.series([
 			(cb)->
-				NewsletterManager.unsubscribe user, cb
+				NewsletterManager.unsubscribe user, (err) ->
+					logger.err("Failed to unsubscribe user from newsletter", user_id: user._id, error: err)
+					cb()
 			(cb)->
 				SubscriptionHandler.cancelSubscription user, cb
 			(cb)->
@@ -65,3 +72,9 @@ module.exports = UserDeleter =
 			(cb)->
 				UserMembershipsHandler.removeUserFromAllEntities user._id, cb
 		], callback)
+
+	_ensureCanDeleteUser: (user, callback) ->
+		SubscriptionLocator.getUsersSubscription user, (error, subscription) ->
+			if subscription?
+				error ||= new Errors.SubscriptionAdminDeletionError()
+			callback(error)
