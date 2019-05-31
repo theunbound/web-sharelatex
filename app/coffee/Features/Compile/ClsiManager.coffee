@@ -205,10 +205,10 @@ module.exports = ClsiManager =
 				logger.log tagNames: (tag.name for tag in tags[0]), "Tag names recieved"
 				result = []
 				result = result.concat tag.project_ids for tag in tags[0] when tag.name == "Kompilering"
-				Promise.all [projectRequest, (asyncBuildRequest environmentId, options for environmentId in result)...]
+				Promise.all [projectRequest, (asyncBuildRequest environmentId, options for environmentId in result when environmentId != project_id)...]
 			.then (requests) ->
 				logger.log requestRootResourcePath: (request.compile.rootResourcePath for request in requests), "Requests to combine."
-				(
+				((environmentRequest) ->
 					if options.syncType? and environmentRequest.compile.options.syncType != requests[0].compile.options.syncType
 						# That's no good. Try again.
 						logger.log mainSyncType: requests[0].compile.options.syncType
@@ -221,17 +221,17 @@ module.exports = ClsiManager =
 
 					# Concaternate resource entries from the environment includes
 					requests[0].compile.resources = requests[0].compile.resources.concat environmentRequest.compile.resources
-				) for environmentRequest in requests[1..]
-				# Derive a combined state hash
+				) environmentRequest for environmentRequest in requests[1..]
 				logger.log {
 					projectCount: requests.length,
 					resourcesCount: requests[0].compile.resources.length
 					}, "Created combined compile request for compile environment."
+				# Derive a combined state hash
 				requests[0].compile.options.syncState = ClsiStateManager.combineHashes(
 					(req.compile.options.syncState for req in requests)... )
 				return callback null, requests[0]
 			.catch (error) ->
-				unless error == localError then	callback error
+				callback error unless error == localError
 
 
 	_buildRequest: (project_id, options={}, callback = (error, request) ->) ->
