@@ -83,7 +83,7 @@ td.project-list-table-actions-cell(ng-if-end)
 		)
 			i.icon.fa.fa-cloud-download(aria-hidden="true")
 		button.btn.btn-link.action-btn(
-			ng-if="!project.archived && isOwner()"
+			ng-if="!project.archived"
 			aria-label=translate('archive'),
 			tooltip=translate('archive'),
 			tooltip-placement="top",
@@ -92,16 +92,7 @@ td.project-list-table-actions-cell(ng-if-end)
 		)
 			i.icon.fa.fa-inbox(aria-hidden="true")
 		button.btn.btn-link.action-btn(
-			ng-if="!isOwner()"
-			aria-label=translate('leave'),
-			tooltip=translate('leave'),
-			tooltip-placement="top",
-			tooltip-append-to-body="true",
-			ng-click="archiveOrLeave($event)"
-		)
-			i.icon.fa.fa-sign-out(aria-hidden="true")
-		button.btn.btn-link.action-btn(
-			ng-if="project.archived && isOwner()"
+			ng-if="project.archived"
 			aria-label=translate('unarchive'),
 			tooltip=translate('unarchive'),
 			tooltip-placement="top",
@@ -110,7 +101,7 @@ td.project-list-table-actions-cell(ng-if-end)
 		)
 			i.icon.fa.fa-reply(aria-hidden="true")
 		button.btn.btn-link.action-btn(
-			ng-if="project.archived && isOwner()"
+			ng-if="project.archived"
 			aria-label=translate('delete_forever'),
 			tooltip=translate('delete_forever'),
 			tooltip-placement="top",
