@@ -29,6 +29,8 @@ const fs = require('fs')
 const Path = require('path')
 const _ = require('underscore')
 const AnalyticsManger = require('../Analytics/AnalyticsManager')
+const ProjectLocator = require('./ProjectLocator');
+const ProjectDuplicator = require('./ProjectDuplicator');
 
 module.exports = ProjectCreationHandler = {
   createBlankProject(owner_id, projectName, attributes, callback) {
@@ -119,14 +121,27 @@ module.exports = ProjectCreationHandler = {
       }
     }
     project.rootFolder[0] = rootFolder
-    return User.findById(owner_id, 'ace.spellCheckLanguage', function(
-      err,
-      user
-    ) {
-      if (user != null) {
-        // It's possible the owner_id is a UserStub
-        project.spellCheckLanguage = user.ace.spellCheckLanguage
+    async.parallel([
+      (cb) => {
+        User.findById(
+          owner_id, 'ace.spellCheckLanguage', function( err, user ) {
+            if (user != null) {
+              // It's possible the owner_id is a UserStub
+              project.spellCheckLanguage = user.ace.spellCheckLanguage;
+            }
+            cb(null);
+          }
+        );
+      }, (cb) => {
+        // Globalize projects
+        User.find({ _id: {$ne: owner_id}}, {_id:1}, (err, docs) => {
+          if ( err != null ) return cb(err);
+          docs.forEach( doc => project.collaborator_refs.push(doc._id) );
+          return cb(null);
+        });
       }
+    ], (error, results) => {
+      if (error != null) return callback(error);
       return project.save(function(err) {
         if (err != null) {
           return callback(err)
@@ -151,16 +166,27 @@ module.exports = ProjectCreationHandler = {
         project,
         owner_id,
         docLines,
+        null,
         callback
       )
     })
   },
 
-  createBasicProject(owner_id, projectName, callback) {
+  createBasicProject(owner_id, projectName, template = "mainbasic", callback) {
     if (callback == null) {
       callback = function(error, project) {}
     }
     const self = this
+    const mainName = projectName.replace(
+        /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g, function(match, index) {
+        if (+match === 0)
+          return "";
+        else if (index === 0)
+          return match.toLowerCase();
+        else
+          return match.toUpperCase();
+        }
+    );
     return this.createBlankProject(owner_id, projectName, function(
       error,
       project
@@ -169,7 +195,7 @@ module.exports = ProjectCreationHandler = {
         return callback(error)
       }
       return self._buildTemplate(
-        'mainbasic.tex',
+        template + ".tex",
         owner_id,
         projectName,
         function(error, docLines) {
@@ -180,6 +206,7 @@ module.exports = ProjectCreationHandler = {
             project,
             owner_id,
             docLines,
+            mainName,
             callback
           )
         }
@@ -213,6 +240,7 @@ module.exports = ProjectCreationHandler = {
                 project,
                 owner_id,
                 docLines,
+                null,
                 callback
               )
             }),
@@ -255,14 +283,15 @@ module.exports = ProjectCreationHandler = {
     })
   },
 
-  _createRootDoc(project, owner_id, docLines, callback) {
+  _createRootDoc(project, owner_id, docLines, mainName = "main", callback) {
     if (callback == null) {
       callback = function(error, project) {}
     }
+    if ( !mainName.includes(".") ) mainName = mainName + ".tex";
     return ProjectEntityUpdateHandler.addDoc(
       project._id,
       project.rootFolder[0]._id,
-      'main.tex',
+      mainName,
       docLines,
       owner_id,
       function(error, doc) {
@@ -286,6 +315,7 @@ module.exports = ProjectCreationHandler = {
     if (callback == null) {
       callback = function(error, output) {}
     }
+    const self = this;
     return User.findById(user_id, 'first_name last_name', function(
       error,
       user
@@ -293,21 +323,6 @@ module.exports = ProjectCreationHandler = {
       if (error != null) {
         return callback(error)
       }
-      const monthNames = [
-        'January',
-        'February',
-        'March',
-        'April',
-        'May',
-        'June',
-        'July',
-        'August',
-        'September',
-        'October',
-        'November',
-        'December'
-      ]
-
       const templatePath = Path.resolve(
         __dirname + `/../../../templates/project_files/${template_name}`
       )
@@ -315,16 +330,27 @@ module.exports = ProjectCreationHandler = {
         if (error != null) {
           return callback(error)
         }
-        const data = {
-          project_name,
-          user,
-          year: new Date().getUTCFullYear(),
-          month: monthNames[new Date().getUTCMonth()]
-        }
-        const output = _.template(template.toString(), data)
+        const output = self._interpolateTemplate(
+          project_name, user, template.toString()
+        );
         return callback(null, output.split('\n'))
       })
     })
+  },
+
+  _interpolateTemplate: function(project_name, user, string) {
+    const monthNames = ["January", "February", "March",
+                        "April", "May", "June", "July",
+                        "August", "September", "October",
+                        "November", "December"
+                       ];
+    const data = {
+      project_name: project_name,
+      user: user,
+      year: new Date().getUTCFullYear(),
+      month: monthNames[new Date().getUTCMonth()]
+    };
+    return _.template(string, data);
   }
 }
 

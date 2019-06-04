@@ -63,14 +63,14 @@ module.exports = ProjectDownloadsController = {
         if (error != null) {
           return next(error)
         }
-        return ProjectZipStreamManager.createZipStreamForMultipleProjects(
+        return ProjectZipStreamManager.createZipStreamForMultipleProjectFolders(
           project_ids,
           function(error, stream) {
             if (error != null) {
               return next(error)
             }
             res.setContentDisposition('attachment', {
-              filename: `Overleaf Projects (${project_ids.length} items).zip`
+              filename: `Omega Projects (${project_ids.length} items).zip`
             })
             res.contentType('application/zip')
             return stream.pipe(res)

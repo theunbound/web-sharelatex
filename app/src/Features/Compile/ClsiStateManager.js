@@ -79,5 +79,12 @@ module.exports = ClsiStateManager = {
       )
       return callback(null, hash)
     })
+  },
+
+  combineHashes (...oldHashes) {
+    if (oldHashes.length > 1)
+      return buildState( oldHashes.join("") );
+    else
+      return oldHashes[0];
   }
 }

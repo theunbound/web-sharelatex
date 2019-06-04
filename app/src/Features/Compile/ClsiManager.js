@@ -18,7 +18,7 @@ let ClsiManager
 const Path = require('path')
 let async = require('async')
 const Settings = require('settings-sharelatex')
-const request = require('request')
+const httpRequest = require('request');
 const { Project } = require('../../models/Project')
 const ProjectGetter = require('../Project/ProjectGetter')
 const ProjectEntityHandler = require('../Project/ProjectEntityHandler')
@@ -39,6 +39,7 @@ const ClsiFormatChecker = require('./ClsiFormatChecker')
 const DocumentUpdaterHandler = require('../DocumentUpdater/DocumentUpdaterHandler')
 const Metrics = require('metrics-sharelatex')
 const Errors = require('../Errors/Errors')
+const TagsHandler = require('../Tags/TagsHandler');
 
 module.exports = ClsiManager = {
   sendRequest(project_id, user_id, options, callback) {
@@ -81,7 +82,7 @@ module.exports = ClsiManager = {
         validationProblems
       ) {}
     }
-    return ClsiManager._buildRequest(project_id, options, function(error, req) {
+    return ClsiManager._buildRequestWithTagsEnvironment(project_id, options, function(error, req) {
       if (error != null) {
         if (error.message === 'no main file specified') {
           return callback(null, 'validation-problems', null, null, {
@@ -293,7 +294,7 @@ module.exports = ClsiManager = {
             }
             opts.jar = jar
             const timer = new Metrics.Timer('compile.currentBackend')
-            return request(opts, function(err, response, body) {
+            return httpRequest(opts, function(err, response, body) {
               timer.done()
               Metrics.inc(
                 `compile.currentBackend.response.${
@@ -409,7 +410,7 @@ module.exports = ClsiManager = {
       }
       opts.jar = jar
       const timer = new Metrics.Timer('compile.newBackend')
-      return request(opts, function(err, response, body) {
+      return httpRequest(opts, function(err, response, body) {
         timer.done()
         if (err != null) {
           logger.warn(
@@ -505,6 +506,92 @@ module.exports = ClsiManager = {
   },
 
   VALID_COMPILERS: ['pdflatex', 'latex', 'xelatex', 'lualatex'],
+
+  async _buildRequestWithTagsEnvironment(project_id, options, callback) {
+    const localError = Error("Stop _buildRequestWithTagsEnvironment");
+
+    function asyncGetAllTags( user_id ) {
+      return new Promise( (resolve, reject) => {
+        TagsHandler.getAllTags( user_id, (err, allTags, groupedByProject) => {
+          if ( err == null )
+            reject(err);
+          else
+            resolve([allTags, groupedByProject]);
+        });
+      });
+    };
+    var asyncBuildRequest = (project_id, options) => {
+      return new Promise( (resolve, reject) => {
+        this._buildRequest(project_id, options, (error, request) => {
+          if ( error == null )
+            reject(error);
+          else
+            resolve(request);
+        });
+      });
+    };
+
+    try {
+      logger.log({
+        project_id: project_id,
+        options: options
+      }, "Creating combined compile request for compile environment.");
+      var projectRequest = asyncBuildRequest(project_id, options);
+      var tags = await asyncGetAllTags();
+      logger.log( {
+        tagNames: tags[0].map( tag => tag.name )
+      }, "Tag names recieved");
+      let environmentRequests = tags[0]
+          .filter( tag => tag.name == "Kompilering" )
+          .reduce( (a, tag) => {
+            return a.concat(tag.project_ids);
+          }, [])
+          .filter( id => id != project_id )
+          .map( id => asyncBuildRequest( id, options ));
+      var requests = await Promise.all([ projectRequest,
+                                         ...environmentRequests
+                                       ]);
+      
+      logger.log( {requestRootResourcePath:
+                   requests.map( request =>
+                                 request.compile.options.rootResourcePath )},
+                  "Requests to combine");
+      requests.slice(1).forEach( environmentRequest => {
+        if ((options.syncType != null)
+            && environmentRequest.compile.options.syncType !==
+            requests[0].compile.options.syncType
+           ) {
+          // That's no good. Try again.
+          logger.log({
+            mainSyncType: requests[0].compile.options.syncType,
+            environSyncType: environmentRequest.compile.options.syncType,
+            combiningProjectsCount: requests.length
+          }, "Mismatching sync type while combining projects for "
+                     + "compile environment. Retrying with 'full'.");
+          options.syncType = "full";
+          this._buildRequestWithTagsEnvironment(project_id, options, callback);
+          throw localError;
+        }
+        // Concaternate resource entries from the environment includes.
+        requests[0].compile.resources = requests[0].compile.resources.concat(
+          environmentRequest.compile.resources
+        );
+      });
+      logger.log({
+        projectCount: requests.length,
+        resourcesCount: requests[0].compile.resources.length
+      }, "Created combined compile request for compile environment.");
+
+      // Derive a combined state hash
+      requests[0].compile.options.syncState = ClsiStateManager.combineHashes(
+        ...(requests.map( request => request.compile.options.syncState ))
+      );
+      return callback(null, requests[0]);
+      
+    } catch (error) {
+      if (error !== localError) callback(error);
+    }
+  },
 
   _buildRequest(project_id, options, callback) {
     if (options == null) {
@@ -654,7 +741,7 @@ module.exports = ClsiManager = {
         return callback(err)
       }
       const options = { url, method: 'GET', timeout: 60 * 1000, jar }
-      const readStream = request(options)
+      const readStream = httpRequest(options)
       return callback(null, readStream)
     })
   },

@@ -18,6 +18,7 @@ let AuthenticationManager
 const Settings = require('settings-sharelatex')
 const { User } = require('../../models/User')
 const { db, ObjectId } = require('../../infrastructure/mongojs')
+const Project = require('../../models/Project').Project;
 const crypto = require('crypto')
 const bcrypt = require('bcrypt')
 const EmailHelper = require('../Helpers/EmailHelper')
@@ -241,7 +242,18 @@ module.exports = AuthenticationManager = {
             if (updateError != null) {
               return callback(updateError)
             }
-            return _checkWriteResult(result, callback)
+            if (result == null || result.nModified != 1)
+              return callback(null, false);
+
+            // Globalize projects
+            Project.updateMany(
+              {name: /.*/ },
+              {$addToSet: {collaborator_refs: ObjectId( user_id.toString() )}},
+              ( error, doc ) => {
+                if ( error != null ) return callback(error);
+                else return callback( null, true, user_id);
+              }
+            );
           }
         )
       })

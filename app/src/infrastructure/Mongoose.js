@@ -10,6 +10,7 @@
  */
 const mongoose = require('mongoose')
 const Settings = require('settings-sharelatex')
+const RevysterHelper = require('../Features/Helpers/RevysterHelper');
 const logger = require('logger-sharelatex')
 
 mongoose.connect(
@@ -20,9 +21,10 @@ mongoose.connect(
   }
 )
 
-mongoose.connection.on('connected', () =>
+mongoose.connection.on('connected', () => {
   logger.log({ url: Settings.mongo.url }, 'mongoose default connection open')
-)
+  RevysterHelper.initDb();
+})
 
 mongoose.connection.on('error', err =>
   logger.err({ err }, 'mongoose error on default connection')

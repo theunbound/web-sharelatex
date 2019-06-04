@@ -23,6 +23,7 @@ const ProjectGetter = require('./ProjectGetter')
 const _ = require('underscore')
 const async = require('async')
 const logger = require('logger-sharelatex')
+const User = require('../../models/User').User;
 
 module.exports = ProjectDuplicator = {
   _copyDocs(
@@ -32,11 +33,19 @@ module.exports = ProjectDuplicator = {
     originalFolder,
     desFolder,
     docContents,
+    rootDocNameTransform,
     callback
   ) {
+    if (rootDocNameTransform == null)
+      rootDocNameTransform = rdn => rdn;
     const setRootDoc = _.once(doc_id =>
       ProjectEntityUpdateHandler.setRootDoc(newProject._id, doc_id)
     )
+    function docName(name) {
+      return ( originalRootDoc != null && name == originalRootDoc.name )
+        ? rootDocNameTransform(name)
+        : name;
+    };
     const docs = originalFolder.docs || []
     const jobs = docs.map(
       doc =>
@@ -48,7 +57,7 @@ module.exports = ProjectDuplicator = {
           return ProjectEntityUpdateHandler.addDoc(
             newProject._id,
             desFolder._id,
-            doc.name,
+            docName(doc.name),
             content.lines,
             owner_id,
             function(err, newDoc) {
@@ -58,7 +67,9 @@ module.exports = ProjectDuplicator = {
               }
               if (
                 originalRootDoc != null &&
-                newDoc.name === originalRootDoc.name
+                  newDoc.name === rootDocNameTransform(
+                    originalRootDoc.name
+                  )
               ) {
                 setRootDoc(newDoc._id)
               }
@@ -128,6 +139,7 @@ module.exports = ProjectDuplicator = {
     originalFolder,
     desFolder,
     docContents,
+    rootDocNameTransform,
     callback
   ) {
     return ProjectGetter.getProject(
@@ -188,6 +200,7 @@ module.exports = ProjectDuplicator = {
             originalFolder,
             desFolder,
             docContents,
+            rootDocNameTransform,
             cb
           )
         )
@@ -198,6 +211,12 @@ module.exports = ProjectDuplicator = {
   },
 
   duplicate(owner, originalProject_id, newProjectName, callback) {
+    return ProjectDuplicator.duplicateWithTransforms(owner, originalProject_id, newProjectName, {}, callback);
+  },
+
+  duplicateWithTransforms(
+    owner, originalProject_id, newProjectName, transforms, callback
+  ) {
     const jobs = {
       flush(cb) {
         return DocumentUpdaterHandler.flushProjectToMongo(
@@ -239,6 +258,11 @@ module.exports = ProjectDuplicator = {
       const docContents = {}
       for (let docContent of Array.from(docContentsArray)) {
         docContents[docContent._id] = docContent
+        if ( transforms.docTransform != null
+             && transforms.docTransform instanceof Function ) {
+          docContents[docContent._id].lines =
+            docContents[docContent._id].lines.map( transforms.docTransform );
+        }
       }
 
       // Now create the new project, cleaning it up on failure if necessary
@@ -271,8 +295,19 @@ module.exports = ProjectDuplicator = {
                 originalProject.rootFolder[0],
                 newProject.rootFolder[0],
                 docContents,
+                transforms.rootDocNameTransform,
                 cb
               )
+            },
+            universalCollab(cb) {
+              User.find({_id: {$ne: owner._id}}, {_id: 1}, (err, docs) => {
+                if ( err != null ) return cb(err);
+                newProject.collaborator_refs =
+                  newProject.collaborator_refs.concat(
+                    docs.map( doc => doc._id )
+                  );
+                cb(null);
+              });
             }
           }
 

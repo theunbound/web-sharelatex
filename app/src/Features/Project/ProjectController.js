@@ -22,6 +22,7 @@ const logger = require('logger-sharelatex')
 const projectDeleter = require('./ProjectDeleter')
 const projectDuplicator = require('./ProjectDuplicator')
 const projectCreationHandler = require('./ProjectCreationHandler')
+const ProjectLocator = require('./ProjectLocator');
 const editorController = require('../Editor/EditorController')
 const metrics = require('metrics-sharelatex')
 const { User } = require('../../models/User')
@@ -209,39 +210,120 @@ module.exports = ProjectController = {
     const projectName =
       req.body.projectName != null ? req.body.projectName.trim() : undefined
     const { template } = req.body
-    logger.log(
-      { user: user_id, projectType: template, name: projectName },
-      'creating project'
-    )
-    return async.waterfall(
-      [
-        function(cb) {
-          if (template === 'example') {
-            return projectCreationHandler.createExampleProject(
-              user_id,
-              projectName,
-              cb
-            )
-          } else {
-            return projectCreationHandler.createBasicProject(
-              user_id,
-              projectName,
-              cb
-            )
-          }
-        }
-      ],
-      function(err, project) {
-        if (err != null) {
-          return next(err)
-        }
-        logger.log(
-          { project, user: user_id, name: projectName, templateType: template },
-          'created project'
-        )
-        return res.send({ project_id: project._id })
+    function finalise(err, project) {
+      if (err != null) {
+        return next(err)
       }
-    )
+      logger.log(
+        { project, user: user_id, name: projectName, templateType: template },
+        'created project'
+      )
+      return res.send({ project_id: project._id })
+    }
+    if (template.id != null) {
+      logger.log(
+        { user: user_id, projectOriginalId: template.id, name: projectName },
+        "creating project by cloning"
+      );
+      res.setTimeout(5 * 60 * 1000); // allow extra time for the copy to complete
+      async.waterfall([ function(cb) {
+        return User.findById(
+          user_id, "first_name last_name", cb
+        );
+      }, function(user, cb) {
+        return projectDuplicator.duplicateWithTransforms(
+          AuthenticationController.getSessionUser(req),
+          template.id, projectName,
+          {
+            docTransform: function(string) {
+              return projectCreationHandler._interpolateTemplate(
+                projectName, user, string
+              );
+            },
+            rootDocNameTransform: function(string) {
+              return projectName.replace(
+                  /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g,
+                function(match, index) {
+                  if (+match === 0)
+                    return "";
+                  else if (index === 0)
+                    return match.toLowerCase();
+                  else
+                    return match.toUpperCase();
+                }) + ".tex";
+              }
+            },
+          cb
+        );
+      }], finalise);
+    } else {
+      logger.log(
+        { user: user_id, projectType: template, name: projectName },
+        "creating project from template"
+      );
+      if (template === 'example') {
+        return projectCreationHandler.createExampleProject(
+          user_id, projectName, finalise
+        );
+      } else {
+        return projectCreationHandler.createBasicProject(
+          user_id, projectName, ( (template != null) && template !== "none" )
+            ? template
+            : 'mainbasic',
+          finalise
+        );
+      }
+    }
+    if (template.id != null) {
+      logger.log(
+        { user: user_id, projectOriginalId: template.id, name: projectName },
+        "creating project by cloning"
+      );
+      res.setTimeout(5 * 60 * 1000); // allow extra time for the copy to complete
+      return async.waterfall([ function(cb) {
+        return User.findById(
+          user_id, "first_name last_name", cb
+        );
+      }, function(user, cb) {
+        return projectDuplicator.duplicateWithTransforms(
+          AuthenticationController.getSessionUser(req), template.id, projectName,
+          { docTransform: function(string) {
+            return projectCreationHandler._interpolateTemplate(
+              projectName, user, string
+            );
+          },
+            rootDocNameTransform: function(string) {
+              return projectName.replace(
+                  /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g,
+                function(match, index) {
+                  if (+match === 0)
+                    return "";
+                  else if (index === 0)
+                    return match.toLowerCase();
+                  else
+                    return match.toUpperCase();
+                }) + ".tex";
+            }
+          }, cb
+        );
+      }], finalise);
+    } else {
+      logger.log(
+        { user: user_id, projectType: template, name: projectName },
+        "creating project from template"
+      );
+      if (template === 'example') {
+        return projectCreationHandler.createExampleProject(
+          user_id, projectName, finalise
+        );
+      } else {
+        return projectCreationHandler.createBasicProject(
+          user_id, projectName, ((template != null) && template !== "none" )
+            ? template
+            : 'mainbasic', finalise
+        );
+      }
+    }
   },
 
   renameProject(req, res, next) {
@@ -353,7 +435,16 @@ module.exports = ProjectController = {
           )
         },
         userAffiliations(cb) {
-          return getUserAffiliations(user_id, cb)
+          return getUserAffiliations(user_id, (error, result) => {
+            if (error != null && error.code === "ECONNREFUSED") {
+              logger.err(
+                error,
+                "userAffiliations: Connection refused. Returning empty result."
+              );
+              return cb(null, []);
+            }
+            return cb(error, result);
+          });
         }
       },
       function(err, results) {
