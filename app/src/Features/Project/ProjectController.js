@@ -274,56 +274,6 @@ module.exports = ProjectController = {
         );
       }
     }
-    if (template.id != null) {
-      logger.log(
-        { user: user_id, projectOriginalId: template.id, name: projectName },
-        "creating project by cloning"
-      );
-      res.setTimeout(5 * 60 * 1000); // allow extra time for the copy to complete
-      return async.waterfall([ function(cb) {
-        return User.findById(
-          user_id, "first_name last_name", cb
-        );
-      }, function(user, cb) {
-        return projectDuplicator.duplicateWithTransforms(
-          AuthenticationController.getSessionUser(req), template.id, projectName,
-          { docTransform: function(string) {
-            return projectCreationHandler._interpolateTemplate(
-              projectName, user, string
-            );
-          },
-            rootDocNameTransform: function(string) {
-              return projectName.replace(
-                  /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g,
-                function(match, index) {
-                  if (+match === 0)
-                    return "";
-                  else if (index === 0)
-                    return match.toLowerCase();
-                  else
-                    return match.toUpperCase();
-                }) + ".tex";
-            }
-          }, cb
-        );
-      }], finalise);
-    } else {
-      logger.log(
-        { user: user_id, projectType: template, name: projectName },
-        "creating project from template"
-      );
-      if (template === 'example') {
-        return projectCreationHandler.createExampleProject(
-          user_id, projectName, finalise
-        );
-      } else {
-        return projectCreationHandler.createBasicProject(
-          user_id, projectName, ((template != null) && template !== "none" )
-            ? template
-            : 'mainbasic', finalise
-        );
-      }
-    }
   },
 
   renameProject(req, res, next) {

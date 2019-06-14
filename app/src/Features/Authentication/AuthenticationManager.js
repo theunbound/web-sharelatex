@@ -25,6 +25,7 @@ const EmailHelper = require('../Helpers/EmailHelper')
 const Errors = require('../Errors/Errors')
 const UserGetter = require('../User/UserGetter')
 const V1Handler = require('../V1/V1Handler')
+const logger = require('logger-sharelatex');
 
 const BCRYPT_ROUNDS =
   __guard__(
@@ -247,8 +248,8 @@ module.exports = AuthenticationManager = {
 
             // Globalize projects
             Project.updateMany(
-              {name: /.*/ },
-              {$addToSet: {collaborator_refs: ObjectId( user_id.toString() )}},
+              { },
+              {$addToSet: {collaberator_refs: ObjectId( user_id.toString() )}},
               ( error, doc ) => {
                 if ( error != null ) return callback(error);
                 else return callback( null, true, user_id);

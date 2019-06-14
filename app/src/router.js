@@ -70,6 +70,7 @@ const LinkedFilesRouter = require('./Features/LinkedFiles/LinkedFilesRouter')
 const TemplatesRouter = require('./Features/Templates/TemplatesRouter')
 const InstitutionsController = require('./Features/Institutions/InstitutionsController')
 const UserMembershipRouter = require('./Features/UserMembership/UserMembershipRouter')
+const RevysterHelper = require('.Features/Helpers/RevysterHelper');
 
 const logger = require('logger-sharelatex')
 const _ = require('underscore')
@@ -92,6 +93,14 @@ module.exports = Router = class Router {
 
     if (Features.hasFeature('registration')) {
       webRouter.get('/register', UserPagesController.registerPage)
+      webRouter.post('/register',
+                     RateLimiterMiddleware.rateLimit({
+                       endpointName: "public-register",
+                       maxRequests : 3,
+                       timeInterval: 60
+                     }),
+                     RevysterHelper.validateEmail,
+                     UserController.register);
       AuthenticationController.addEndpointToLoginWhitelist('/register')
     }
 
@@ -449,12 +458,12 @@ module.exports = Router = class Router {
 
     webRouter.delete(
       '/Project/:Project_id',
-      AuthorizationMiddleware.ensureUserCanAdminProject,
+      AuthorizationMiddleware.ensureUserCanWriteProjectContent,
       ProjectController.deleteProject
     )
     webRouter.post(
       '/Project/:Project_id/restore',
-      AuthorizationMiddleware.ensureUserCanAdminProject,
+      AuthorizationMiddleware.ensureUserCanWriteProjectContent,
       ProjectController.restoreProject
     )
     webRouter.post(
@@ -465,7 +474,7 @@ module.exports = Router = class Router {
 
     webRouter.post(
       '/project/:Project_id/rename',
-      AuthorizationMiddleware.ensureUserCanAdminProject,
+      AuthorizationMiddleware.ensureUserCanWriteProjectContent,
       ProjectController.renameProject
     )
 

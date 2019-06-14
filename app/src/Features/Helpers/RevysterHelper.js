@@ -98,14 +98,14 @@ module.exports = RevysterHelper = {
   async initDb() {
     const parachute = Error("initDb parachute");
     let userId = "";
-    const callbackToPromise = (funcWithCallback, ...params) => {
+    const callbackToPromise = (methodParent, funcName, ...params) => {
       return new Promise((resolve, reject) => {
-        funcWithCallback.apply(this, [...params, (err, ...outputs) => {
+        methodParent[funcName]( ...params, (err, ...outputs) => {
           if (err != null)
             reject(err);
           else
             resolve(outputs);
-        }]);
+        });
       });
     };
     const createSingleDocumentProject = async(docName) => {
@@ -117,27 +117,27 @@ module.exports = RevysterHelper = {
       let docLines = (async() =>
                       (await fs.readFile(docPath, 'utf8')).split('\n'))();
       let newProject = callbackToPromise(
-        ProjectCreationHandler.createBlankProject,
+        ProjectCreationHandler, "createBlankProject",
         userId,
         docName.replace(".tex", "")
       );
+      
+      [docLines, [newProject]] = await Promise.all([docLines, newProject]);
       logger.log({
         docPath: docPath,
-        docLines: typeof docLines,
-        newProject: typeof newProject
+        docLinesLength: docLines.length,
+        newProject: newProject
       }, "createSingleProjectDocument creating root doc.");
-      
-      await Promise.all([docLines, newProject]);
       await callbackToPromise(
-        ProjectCreationHandler._createRootDoc,
-        newProject[0], userId, docLines, docName
+        ProjectCreationHandler, "_createRootDoc",
+        newProject, userId, docLines, docName
       );
-      return newProject[0];
+      return newProject;
     };
 
     try {
       logger.log("Performing database initialisation for Revy-use.");
-      let [user] = await callbackToPromise( UserGetter.getuser,
+      let [user] = await callbackToPromise( UserGetter, "getUser",
                                             {isAdmin: true}, {}
                                           );
       if (user == null) {
@@ -147,7 +147,7 @@ module.exports = RevysterHelper = {
         throw parachute;
       }
       userId = user._id.toString();
-      let [[tags]] = await callbackToPromise(TagsHandler.getAllTags);
+      let [tags] = await callbackToPromise(TagsHandler, "getAllTags", null);
       let tagNames = tags.map( tag => tag.name );
       logger.log({ tagNames: tagNames }, "Found tags.");
       let taskArray = [];
@@ -158,12 +158,12 @@ module.exports = RevysterHelper = {
                   );
         taskArray.push(( async() => {
           let [[tag], project] = await Promise.all([
-            callbackToPromise( TagsHandler.createTag,
+            callbackToPromise( TagsHandler, "createTag",
                                userId, "Kompilering"
                              ),
             createSingleDocumentProject("revy.sty")
           ]);
-          await callbackToPromise( TagsHandler.addProjectToTag,
+          await callbackToPromise( TagsHandler, "addProjectToTag",
                                    userId, tag._id, project._id
                                  );
           logger.log({ userId: userId,
@@ -179,19 +179,20 @@ module.exports = RevysterHelper = {
         logger.log({ tagNames: tagNames },
                    "Tag 'Skabeloner' not found. Creating.");
         taskArray.push( (async() => {
-          let tagPromise = callbackToPromise( TagsHandler.createTag,
+          let tagPromise = callbackToPromise( TagsHandler,"createTag",
                                               userId, "Skabeloner"
                                             );
-          await Promise.await(
+          await Promise.all(
             ["Sang.tex", "Sketch.tex"].map( async(name) => {
               let project = await createSingleDocumentProject(name);
               let [tag] = await tagPromise;
-              await callbackToPromise( TagsHandler.addProjectToTag,
-                                       userId, tag[0]._id, project._id
+              logger.log({tag: tag}, "Skabeloner tag");
+              await callbackToPromise( TagsHandler, "addProjectToTag",
+                                       userId, tag._id, project._id
                                      );
               logger.log({ userId: userId,
-                           tagId: tag[0]._id,
-                           tagName: tag[0].name,
+                           tagId: tag._id,
+                           tagName: tag.name,
                            projectName: project.name
                          }, "New project"
                         ); 

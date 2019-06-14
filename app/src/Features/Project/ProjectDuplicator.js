@@ -300,11 +300,11 @@ module.exports = ProjectDuplicator = {
               )
             },
             universalCollab(cb) {
-              User.find({_id: {$ne: owner._id}}, {_id: 1}, (err, docs) => {
+              User.find({_id: {$ne: owner._id}}, {_id: 1}, (err, otherUsers) => {
                 if ( err != null ) return cb(err);
-                newProject.collaborator_refs =
-                  newProject.collaborator_refs.concat(
-                    docs.map( doc => doc._id )
+                newProject.collaberator_refs =
+                  otherUsers.map( user => user._id ).concat(
+                    newProject.collaberator_refs
                   );
                 cb(null);
               });

@@ -513,7 +513,7 @@ module.exports = ClsiManager = {
     function asyncGetAllTags( user_id ) {
       return new Promise( (resolve, reject) => {
         TagsHandler.getAllTags( user_id, (err, allTags, groupedByProject) => {
-          if ( err == null )
+          if ( err != null )
             reject(err);
           else
             resolve([allTags, groupedByProject]);
@@ -523,7 +523,7 @@ module.exports = ClsiManager = {
     var asyncBuildRequest = (project_id, options) => {
       return new Promise( (resolve, reject) => {
         this._buildRequest(project_id, options, (error, request) => {
-          if ( error == null )
+          if ( error != null )
             reject(error);
           else
             resolve(request);
