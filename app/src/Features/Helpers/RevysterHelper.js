@@ -1,5 +1,3 @@
-const indexOf = [].indexOf;
-
 const https = require("https");
 const logger = require("logger-sharelatex");
 const TagsHandler = require("../Tags/TagsHandler");
@@ -7,8 +5,38 @@ const ProjectCreationHandler = require("../Project/ProjectCreationHandler");
 const UserGetter = require("../User/UserGetter");
 const fs = require("fs").promises;
 const path = require("path");
-
 let RevysterHelper;
+
+function promiseWrapMethods( callbackOwner ) {
+  if ( callbackOwner.asyncProxy == undefined ) {
+
+    let promiseWrappingHandler = {
+      get: function(target, prop, reciever) {
+        if ( typeof target[prop] !== "function" )
+          return Reflect.get(...arguments);
+
+        return function promiseWrappedMethod( ...args ) {
+          return new Promise(( resolve, reject ) => {
+            args.push( (err, ...results) => {
+              if (err != null)
+                reject(err);
+              else
+                resolve(results);
+            });
+            target[prop].apply( target, args );
+          });
+        };
+      }
+    };
+
+    callbackOwner.asyncProxy = new Proxy(
+      callbackOwner, promiseWrappingHandler
+    );
+  }
+
+  return callbackOwner.asyncProxy;
+};
+
 module.exports = RevysterHelper = {
   
   validateEmail: async(req, res, next) => {
@@ -116,11 +144,8 @@ module.exports = RevysterHelper = {
                                   );
       let docLines = (async() =>
                       (await fs.readFile(docPath, 'utf8')).split('\n'))();
-      let newProject = callbackToPromise(
-        ProjectCreationHandler, "createBlankProject",
-        userId,
-        docName.replace(".tex", "")
-      );
+      let newProject = promiseWrapMethods( ProjectCreationHandler )
+          .createBlankProject(userId, docName.replace(".tex", ""));
       
       [docLines, [newProject]] = await Promise.all([docLines, newProject]);
       logger.log({
@@ -128,18 +153,15 @@ module.exports = RevysterHelper = {
         docLinesLength: docLines.length,
         newProject: newProject
       }, "createSingleProjectDocument creating root doc.");
-      await callbackToPromise(
-        ProjectCreationHandler, "_createRootDoc",
-        newProject, userId, docLines, docName
-      );
+      await promiseWrapMethods(ProjectCreationHandler)
+        ._createRootDoc(newProject, userId, docLines, docName);
       return newProject;
     };
 
     try {
       logger.log("Performing database initialisation for Revy-use.");
-      let [user] = await callbackToPromise( UserGetter, "getUser",
-                                            {isAdmin: true}, {}
-                                          );
+      let [user] = promiseWrapMethods( UserGetter )
+          .getUser( {isAdmin: true}, {} );
       if (user == null) {
         logger.log(
           "No admin user to own anything yet. Skipping initializatiion."
@@ -147,7 +169,7 @@ module.exports = RevysterHelper = {
         throw parachute;
       }
       userId = user._id.toString();
-      let [tags] = await callbackToPromise(TagsHandler, "getAllTags", null);
+      let [tags] = await promiseWrapMethods(TagsHandler).getAllTags(null);
       let tagNames = tags.map( tag => tag.name );
       logger.log({ tagNames: tagNames }, "Found tags.");
       let taskArray = [];
@@ -158,14 +180,11 @@ module.exports = RevysterHelper = {
                   );
         taskArray.push(( async() => {
           let [[tag], project] = await Promise.all([
-            callbackToPromise( TagsHandler, "createTag",
-                               userId, "Kompilering"
-                             ),
+            promiseWrapMethods(TagsHandler).createTag(userId, "Kompilering"),
             createSingleDocumentProject("revy.sty")
           ]);
-          await callbackToPromise( TagsHandler, "addProjectToTag",
-                                   userId, tag._id, project._id
-                                 );
+          await promiseWrapMethods(TagsHandler)
+            .addProjectToTag( userId, tag._id, project._id );
           logger.log({ userId: userId,
                        tagId: tag._id,
                        tagName: tag.name,
@@ -179,17 +198,15 @@ module.exports = RevysterHelper = {
         logger.log({ tagNames: tagNames },
                    "Tag 'Skabeloner' not found. Creating.");
         taskArray.push( (async() => {
-          let tagPromise = callbackToPromise( TagsHandler,"createTag",
-                                              userId, "Skabeloner"
-                                            );
+          let tagPromise = promiseWrapMethods(TagsHandler)
+              .createTag( userId, "Skabeloner");
           await Promise.all(
             ["Sang.tex", "Sketch.tex"].map( async(name) => {
               let project = await createSingleDocumentProject(name);
               let [tag] = await tagPromise;
               logger.log({tag: tag}, "Skabeloner tag");
-              await callbackToPromise( TagsHandler, "addProjectToTag",
-                                       userId, tag._id, project._id
-                                     );
+              await promiseWrapMethods(TagsHandler)
+                .addProjectToTag( userId, tag._id, project._id );
               logger.log({ userId: userId,
                            tagId: tag._id,
                            tagName: tag.name,
