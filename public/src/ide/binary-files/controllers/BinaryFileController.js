@@ -28,8 +28,8 @@ define(['base', 'moment'], (App, moment) =>
       const TWO_MEGABYTES = 2 * 1024 * 1024
 
       const textExtensions = ['bib', 'tex', 'txt', 'cls', 'sty']
-      const imageExtentions = ['png', 'jpg', 'jpeg', 'gif']
-      const previewableExtensions = ['eps', 'pdf']
+      const imageExtensions = ['png', 'jpg', 'jpeg', 'gif']
+      const previewableExtensions = []
 
       const extension = file =>
         __guard__(file.name.split('.').pop(), x => x.toLowerCase())
@@ -38,7 +38,7 @@ define(['base', 'moment'], (App, moment) =>
         return textExtensions.indexOf(extension($scope.openFile)) > -1
       }
       $scope.isImageFile = () => {
-        return imageExtentions.indexOf(extension($scope.openFile)) > -1
+        return imageExtensions.indexOf(extension($scope.openFile)) > -1
       }
       $scope.isPreviewableFile = () => {
         return previewableExtensions.indexOf(extension($scope.openFile)) > -1
