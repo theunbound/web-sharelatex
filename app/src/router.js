@@ -70,7 +70,7 @@ const LinkedFilesRouter = require('./Features/LinkedFiles/LinkedFilesRouter')
 const TemplatesRouter = require('./Features/Templates/TemplatesRouter')
 const InstitutionsController = require('./Features/Institutions/InstitutionsController')
 const UserMembershipRouter = require('./Features/UserMembership/UserMembershipRouter')
-const RevysterHelper = require('.Features/Helpers/RevysterHelper');
+const RevysterHelper = require('./Features/Helpers/RevysterHelper');
 
 const logger = require('logger-sharelatex')
 const _ = require('underscore')
