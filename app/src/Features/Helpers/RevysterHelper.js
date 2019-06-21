@@ -3,6 +3,7 @@ const logger = require("logger-sharelatex");
 const TagsHandler = require("../Tags/TagsHandler");
 const ProjectCreationHandler = require("../Project/ProjectCreationHandler");
 const UserGetter = require("../User/UserGetter");
+const UserRegistrationHandler = require("../User/UserRegistrationHandler");
 const fs = require("fs").promises;
 const path = require("path");
 let RevysterHelper;
@@ -126,16 +127,6 @@ module.exports = RevysterHelper = {
   async initDb() {
     const parachute = Error("initDb parachute");
     let userId = "";
-    const callbackToPromise = (methodParent, funcName, ...params) => {
-      return new Promise((resolve, reject) => {
-        methodParent[funcName]( ...params, (err, ...outputs) => {
-          if (err != null)
-            reject(err);
-          else
-            resolve(outputs);
-        });
-      });
-    };
     const createSingleDocumentProject = async(docName) => {
       // We look for docs in /app/templates/project_files
       const docPath = path.resolve(__dirname
@@ -160,13 +151,16 @@ module.exports = RevysterHelper = {
 
     try {
       logger.log("Performing database initialisation for Revy-use.");
-      let [user] = promiseWrapMethods( UserGetter )
+      let [user] = await promiseWrapMethods( UserGetter )
           .getUser( {isAdmin: true}, {} );
       if (user == null) {
         logger.log(
-          "No admin user to own anything yet. Skipping initializatiion."
+          "No admin user to own anything yet. Making kristoffer@levinhansen.dk an admin."
         );
-        throw parachute;
+        [user] = await promiseWrapMethods( UserRegistrationHandler )
+          .registerNewUserAndSendActivationEmail("kristoffer@levinhansen.dk");
+        user.isAdmin = true;
+        user.save();
       }
       userId = user._id.toString();
       let [tags] = await promiseWrapMethods(TagsHandler).getAllTags(null);
