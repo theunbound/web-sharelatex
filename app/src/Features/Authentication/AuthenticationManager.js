@@ -32,6 +32,8 @@ const BCRYPT_ROUNDS =
     Settings != null ? Settings.security : undefined,
     x => x.bcryptRounds
   ) || 12
+const BCRYPT_MINOR_VERSION =
+  (Settings != null ? Settings.security.bcryptMinorVersion : undefined) || 'a'
 
 const _checkWriteResult = function(result, callback) {
   // for MongoDB
@@ -213,51 +215,55 @@ module.exports = AuthenticationManager = {
     }
   },
 
+  hashPassword(password, callback) {
+    return bcrypt.genSalt(BCRYPT_ROUNDS, BCRYPT_MINOR_VERSION, function(
+      error,
+      salt
+    ) {
+      if (error != null) {
+        return callback(error)
+      }
+      return bcrypt.hash(password, salt, callback)
+    })
+  },
+
   setUserPasswordInV2(user_id, password, callback) {
     const validation = this.validatePassword(password)
     if (validation != null) {
       return callback(validation.message)
     }
-    const minorVersion = 'a'
-    return bcrypt.genSalt(BCRYPT_ROUNDS, minorVersion, function(error, salt) {
+    return this.hashPassword(password, function(error, hash) {
       if (error != null) {
         return callback(error)
       }
-      return bcrypt.hash(password, salt, function(error, hash) {
-        if (error != null) {
-          return callback(error)
-        }
-        return db.users.update(
-          {
-            _id: ObjectId(user_id.toString())
+      return db.users.update(
+        {
+          _id: ObjectId(user_id.toString())
+        },
+        {
+          $set: {
+            hashedPassword: hash
           },
-          {
-            $set: {
-              hashedPassword: hash
-            },
-            $unset: {
-              password: true
-            }
-          },
-          function(updateError, result) {
-            if (updateError != null) {
-              return callback(updateError)
-            }
-            if (result == null || result.nModified != 1)
-              return callback(null, false);
-
-            // Globalize projects
-            Project.updateMany(
-              { },
-              {$addToSet: {collaberator_refs: ObjectId( user_id.toString() )}},
-              ( error, doc ) => {
-                if ( error != null ) return callback(error);
-                else return callback( null, true, user_id);
-              }
-            );
+          $unset: {
+            password: true
           }
-        )
-      })
+        },
+        function(updateError, result) {
+          if (updateError != null) {
+            return callback(updateError)
+          }
+          if (result == null || result.nModified != 1)
+            return callback(null, false);
+
+          // Globalize projects
+          Project.updateMany(
+            { },
+            {$addToSet: {collaberator_refs: ObjectId( user_id.toString() )}},
+            ( error, doc ) => {
+              if ( error != null ) return callback(error);
+              else return callback( null, true, user_id);
+            }
+          )
     })
   },
 

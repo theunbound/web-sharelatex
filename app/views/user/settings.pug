@@ -5,6 +5,9 @@ block content
 		.container
 			.row
 				.col-md-12.col-lg-10.col-lg-offset-1
+					if ssoError
+						.alert.alert-danger
+							| #{translate('sso_link_error')}: #{translate(ssoError)}
 					.card
 						.page-header
 							h1  #{translate("account_settings")}
@@ -292,4 +295,4 @@ block content
 				span(ng-show="state.inflight") #{translate("deleting")}...
 	
 	script(type='text/javascript').
-		window.passwordStrengthOptions = !{JSON.stringify(settings.passwordStrengthOptions || {})}
+		window.passwordStrengthOptions = !{StringHelper.stringifyJsonForScript(settings.passwordStrengthOptions || {})}
