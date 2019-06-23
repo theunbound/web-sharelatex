@@ -264,6 +264,8 @@ module.exports = AuthenticationManager = {
               else return callback( null, true, user_id);
             }
           )
+        }
+      )
     })
   },
 
