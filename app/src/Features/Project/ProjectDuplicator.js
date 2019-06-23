@@ -299,6 +299,7 @@ module.exports = ProjectDuplicator = {
                 cb
               )
             },
+            // Globalize projects
             universalCollab(cb) {
               User.find({_id: {$ne: owner._id}}, {_id: 1}, (err, otherUsers) => {
                 if ( err != null ) return cb(err);
