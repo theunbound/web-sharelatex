@@ -6,6 +6,7 @@ const UserGetter = require("../User/UserGetter");
 const UserRegistrationHandler = require("../User/UserRegistrationHandler");
 const fs = require("fs").promises;
 const path = require("path");
+const MAX_RETRIES = 10;
 let RevysterHelper;
 
 function promiseWrapMethods( callbackOwner ) {
@@ -24,7 +25,11 @@ function promiseWrapMethods( callbackOwner ) {
               else
                 resolve(results);
             });
-            target[prop].apply( target, args );
+            try {
+              target[prop].apply( target, args );
+            } catch (error) {
+              reject(error);
+            }
           });
         };
       }
@@ -100,6 +105,7 @@ module.exports = RevysterHelper = {
         bufferSide = otherSide;
       }
     })();
+    lookForAddresses.next();    // Gotta be primin'
 
     return new Promise( (resolve, reject) => {
       let req = https.request(options, function(res) {
@@ -124,7 +130,7 @@ module.exports = RevysterHelper = {
     });
   },
   
-  async initDb() {
+  async initDb( retryCount /*optional*/ ) {
     const parachute = Error("initDb parachute");
     let userId = "";
     const createSingleDocumentProject = async(docName) => {
@@ -155,12 +161,15 @@ module.exports = RevysterHelper = {
           .getUser( {isAdmin: true}, {} );
       if (user == null) {
         logger.log(
-          "No admin user to own anything yet. Making kristoffer@levinhansen.dk an admin."
+          "No admin user to own anything yet. " +
+            "Making kristoffer@levinhansen.dk an admin."
         );
         [user] = await promiseWrapMethods( UserRegistrationHandler )
           .registerNewUserAndSendActivationEmail("kristoffer@levinhansen.dk");
         user.isAdmin = true;
         user.save();
+      } else {
+        logger.log(user, "Admin user selected for template ownership.");
       }
       userId = user._id.toString();
       let [tags] = await promiseWrapMethods(TagsHandler).getAllTags(null);
@@ -217,7 +226,16 @@ module.exports = RevysterHelper = {
       await Promise.all(taskArray);
       
     } catch (error) {
-      if (error !== parachute) {
+      if (error.message && error.message == "ESOCKETTIMEOUT") {
+        let count = ( retryCount ) ? retryCount : 0;
+        if ( count < MAX_RETRIES ) RevysterHelper.initDB( count + 1 );
+        else logger.err( {error: error,
+                          stError: error.toString(),
+                          retries: count
+                         },
+                         "Still getting timeout after retries."
+                       );
+      } else if (error !== parachute) {
         logger.err({ error: error, stError: error.toString() },
                    "RevysterInitDb"
                   );
