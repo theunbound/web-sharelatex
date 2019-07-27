@@ -16,10 +16,14 @@ const modulePath = require('path').join(
   __dirname,
   '../../../../app/src/Features/Editor/EditorHttpController'
 )
+const Errors = require('../../../../app/src/Features/Errors/Errors')
 
 describe('EditorHttpController', function() {
   beforeEach(function() {
     this.EditorHttpController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         '../Project/ProjectEntityUpdateHandler': (this.ProjectEntityUpdateHandler = {}),
         '../Project/ProjectDeleter': (this.ProjectDeleter = {}),
@@ -37,7 +41,8 @@ describe('EditorHttpController', function() {
         '../Collaborators/CollaboratorsHandler': (this.CollaboratorsHandler = {}),
         '../Collaborators/CollaboratorsInviteHandler': (this.CollaboratorsInviteHandler = {}),
         '../TokenAccess/TokenAccessHandler': (this.TokenAccessHandler = {}),
-        '../Authentication/AuthenticationController': (this.AuthenticationController = {})
+        '../Authentication/AuthenticationController': (this.AuthenticationController = {}),
+        '../Errors/Errors': Errors
       }
     })
 
@@ -49,7 +54,7 @@ describe('EditorHttpController', function() {
     this.AuthenticationController.getLoggedInUserId = sinon
       .stub()
       .returns(this.userId)
-    this.req = {}
+    this.req = { i18n: { translate: string => string } }
     this.res = {
       send: sinon.stub(),
       sendStatus: sinon.stub(),
@@ -186,6 +191,24 @@ describe('EditorHttpController', function() {
         .callsArgWith(2, null, this.user))
     })
 
+    describe('when project is not found', function() {
+      beforeEach(function() {
+        this.ProjectGetter.getProjectWithoutDocLines.yields(null, null)
+        return this.EditorHttpController._buildJoinProjectView(
+          this.req,
+          this.project_id,
+          this.user_id,
+          this.callback
+        )
+      })
+
+      it('should handle return not found error', function() {
+        let args = this.callback.lastCall.args
+        args.length.should.equal(1)
+        args[0].should.be.instanceof(Errors.NotFoundError)
+      })
+    })
+
     describe('when authorized', function() {
       beforeEach(function() {
         this.AuthorizationManager.getPrivilegeLevelForProject = sinon
@@ -286,13 +309,27 @@ describe('EditorHttpController', function() {
     })
 
     describe('unsuccesfully', function() {
-      beforeEach(function() {
+      it('handle name too short', function() {
         this.req.body.name = ''
-        return this.EditorHttpController.addDoc(this.req, this.res)
+        this.EditorHttpController.addDoc(this.req, this.res)
+        this.res.sendStatus.calledWith(400).should.equal(true)
       })
 
-      it('should send back a bad request status code', function() {
-        return this.res.sendStatus.calledWith(400).should.equal(true)
+      it('handle too many files', function() {
+        this.EditorController.addDoc.yields(
+          new Error('project_has_to_many_files')
+        )
+        let res = {
+          status: status => {
+            status.should.equal(400)
+            return {
+              json: json => {
+                json.should.equal('project_has_to_many_files')
+              }
+            }
+          }
+        }
+        this.EditorHttpController.addDoc(this.req, res)
       })
     })
   })
@@ -332,13 +369,44 @@ describe('EditorHttpController', function() {
     })
 
     describe('unsuccesfully', function() {
-      beforeEach(function() {
+      it('handle name too short', function() {
         this.req.body.name = ''
-        return this.EditorHttpController.addFolder(this.req, this.res)
+        this.EditorHttpController.addFolder(this.req, this.res)
+        this.res.sendStatus.calledWith(400).should.equal(true)
       })
 
-      it('should send back a bad request status code', function() {
-        return this.res.sendStatus.calledWith(400).should.equal(true)
+      it('handle too many files', function() {
+        this.EditorController.addFolder.yields(
+          new Error('project_has_to_many_files')
+        )
+        let res = {
+          status: status => {
+            status.should.equal(400)
+            return {
+              json: json => {
+                json.should.equal('project_has_to_many_files')
+              }
+            }
+          }
+        }
+        this.EditorHttpController.addFolder(this.req, res)
+      })
+
+      it('handle invalid element name', function() {
+        this.EditorController.addFolder.yields(
+          new Error('invalid element name')
+        )
+        let res = {
+          status: status => {
+            status.should.equal(400)
+            return {
+              json: json => {
+                json.should.equal('invalid_file_name')
+              }
+            }
+          }
+        }
+        this.EditorHttpController.addFolder(this.req, res)
       })
     })
   })

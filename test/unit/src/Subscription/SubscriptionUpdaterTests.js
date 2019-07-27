@@ -95,6 +95,9 @@ describe('SubscriptionUpdater', function() {
       refreshFeatures: sinon.stub().yields()
     }
     this.SubscriptionUpdater = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         '../../models/Subscription': {
           Subscription: this.SubscriptionModel
@@ -104,7 +107,8 @@ describe('SubscriptionUpdater', function() {
         '../User/UserGetter': this.UserGetter,
         './PlansLocator': this.PlansLocator,
         'logger-sharelatex': {
-          log() {}
+          log() {},
+          warn() {}
         },
         'settings-sharelatex': this.Settings,
         './FeaturesUpdater': this.FeaturesUpdater

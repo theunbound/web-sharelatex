@@ -24,13 +24,16 @@ const modulePath = path.join(
 
 describe('InstitutionsAPI', function() {
   beforeEach(function() {
-    this.logger = { err: sinon.stub(), log() {} }
+    this.logger = { warn: sinon.stub(), err: sinon.stub(), log() {} }
     this.settings = { apis: { v1: { url: 'v1.url', user: '', pass: '' } } }
     this.request = sinon.stub()
     this.ipMatcherNotification = {
       read: (this.markAsReadIpMatcher = sinon.stub().callsArgWith(1, null))
     }
     this.InstitutionsAPI = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'logger-sharelatex': this.logger,
         'metrics-sharelatex': {
@@ -76,7 +79,8 @@ describe('InstitutionsAPI', function() {
     })
 
     it('handle empty response', function(done) {
-      this.settings.apis = null
+      this.settings.apis.v1.url = ''
+
       return this.InstitutionsAPI.getInstitutionAffiliations(
         this.institutionId,
         (err, body) => {
@@ -159,7 +163,7 @@ describe('InstitutionsAPI', function() {
     })
 
     it('handle empty response', function(done) {
-      this.settings.apis = null
+      this.settings.apis.v1.url = ''
       return this.InstitutionsAPI.getUserAffiliations(
         this.stubbedUser._id,
         (err, body) => {

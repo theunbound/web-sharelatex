@@ -7,7 +7,6 @@
 /*
  * decaffeinate suggestions:
  * DS102: Remove unnecessary code created because of implicit returns
- * DS103: Rewrite code to no longer use __guard__
  * DS207: Consider shorter variations of null checks
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
@@ -23,6 +22,7 @@ const BaseWithHeaderEmailLayout = require(`./Layouts/${
 }BaseWithHeaderEmailLayout`)
 const SpamSafe = require('./SpamSafe')
 
+// Single CTA Email
 const SingleCTAEmailBody = require(`./Bodies/${
   settings.brandPrefix
 }SingleCTAEmailBody`)
@@ -64,6 +64,48 @@ The ${settings.appName} Team - ${settings.siteUrl}\
         secondaryMessage: marked(content.secondaryMessage(opts).trim()),
         ctaText: content.ctaText(opts),
         ctaURL: content.ctaURL(opts),
+        gmailGoToAction:
+          typeof content.gmailGoToAction === 'function'
+            ? content.gmailGoToAction(opts)
+            : undefined,
+        StringHelper
+      })
+    }
+  }
+}
+
+// No CTA Email
+const NoCTAEmailBody = require(`./Bodies/NoCTAEmailBody`)
+const NoCTAEmailTemplate = function(content) {
+  if (content.greeting == null) {
+    content.greeting = () => 'Hi,'
+  }
+  if (content.secondaryMessage == null) {
+    content.secondaryMessage = () => ''
+  }
+  return {
+    subject(opts) {
+      return content.subject(opts)
+    },
+    layout: BaseWithHeaderEmailLayout,
+    plainTextTemplate(opts) {
+      return `\
+${content.greeting(opts)}
+${content.message(opts).trim()}
+${(typeof content.secondaryMessage === 'function'
+        ? content.secondaryMessage(opts).trim()
+        : undefined) || ''}
+Regards,
+The ${settings.appName} Team - ${settings.siteUrl}\
+`
+    },
+    compiledTemplate(opts) {
+      return NoCTAEmailBody({
+        title:
+          typeof content.title === 'function' ? content.title(opts) : undefined,
+        greeting: content.greeting(opts),
+        message: marked(content.message(opts).trim()),
+        secondaryMessage: marked(content.secondaryMessage(opts).trim()),
         gmailGoToAction:
           typeof content.gmailGoToAction === 'function'
             ? content.gmailGoToAction(opts)
@@ -188,6 +230,20 @@ If you didn't request a password reset, let us know.\
   },
   ctaURL(opts) {
     return opts.setNewPasswordUrl
+  }
+})
+
+templates.passwordChanged = NoCTAEmailTemplate({
+  subject(opts) {
+    return `Password Changed - ${settings.appName}`
+  },
+  title(opts) {
+    return `Password Changed`
+  },
+  message(opts) {
+    return `We're contacting you to notify you that your password has been set or changed.
+
+If you have recently set your password for the first time, or if you just changed your password, you don't need to take any further action. If you didn't set or change your password, please contact us.`
   }
 })
 
@@ -420,23 +476,52 @@ If you have any questions, you can contact our support team by reply.\
   }
 })
 
+templates.emailThirdPartyIdentifierLinked = NoCTAEmailTemplate({
+  subject(opts) {
+    return `Your ${settings.appName} account is now linked with ${
+      opts.provider
+    }`
+  },
+  title(opts) {
+    return `Accounts Linked`
+  },
+  message(opts) {
+    let message = `We're contacting you to notify you that your ${opts.provider}
+    account is now linked to your ${settings.appName} account`
+    return message
+  }
+})
+
+templates.emailThirdPartyIdentifierUnlinked = NoCTAEmailTemplate({
+  subject(opts) {
+    return `Your ${settings.appName} account is no longer linked with ${
+      opts.provider
+    }`
+  },
+  title(opts) {
+    return `Accounts No Longer Linked`
+  },
+  message(opts) {
+    let message = `We're contacting you to notify you that your ${opts.provider}
+    account is no longer linked with your ${settings.appName} account.`
+    return message
+  }
+})
+
 module.exports = {
   templates,
   CTAEmailTemplate,
+  NoCTAEmailTemplate,
   buildEmail(templateName, opts) {
     const template = templates[templateName]
     opts.siteUrl = settings.siteUrl
     opts.body = template.compiledTemplate(opts)
     if (
-      __guard__(
-        settings.email != null ? settings.email.templates : undefined,
-        x => x.customFooter
-      ) != null
+      settings.email &&
+      settings.email.template &&
+      settings.email.template.customFooter
     ) {
-      opts.body += __guard__(
-        settings.email != null ? settings.email.templates : undefined,
-        x1 => x1.customFooter
-      )
+      opts.body += settings.email.template.customFooter
     }
     return {
       subject: template.subject(opts),
@@ -448,11 +533,6 @@ module.exports = {
   }
 }
 
-function __guard__(value, transform) {
-  return typeof value !== 'undefined' && value !== null
-    ? transform(value)
-    : undefined
-}
 function __guardMethod__(obj, methodName, transform) {
   if (
     typeof obj !== 'undefined' &&

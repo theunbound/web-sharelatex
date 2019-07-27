@@ -33,6 +33,9 @@ describe('BetaProgramHandler', function() {
       save: sinon.stub().callsArgWith(0, null)
     }
     return (this.handler = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         '../../models/User': {
           User: {
@@ -41,6 +44,7 @@ describe('BetaProgramHandler', function() {
         },
         'logger-sharelatex': (this.logger = {
           log: sinon.stub(),
+          warn: sinon.stub(),
           err: sinon.stub()
         }),
         'metrics-sharelatex': (this.logger = {

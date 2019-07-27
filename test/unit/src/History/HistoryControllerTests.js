@@ -26,11 +26,15 @@ describe('HistoryController', function() {
       getLoggedInUserId: sinon.stub().returns(this.user_id)
     }
     this.HistoryController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         request: (this.request = sinon.stub()),
         'settings-sharelatex': (this.settings = {}),
         'logger-sharelatex': (this.logger = {
           log: sinon.stub(),
+          warn: sinon.stub(),
           error: sinon.stub()
         }),
         '../Authentication/AuthenticationController': this

@@ -855,31 +855,25 @@ describe('TokenAccess', function() {
 
     after(() => delete settings.overleaf)
 
-    it('should redirect read and write token to v1', function(done) {
+    it('should show error page for read and write token', function(done) {
       const unimportedV1Token = '123abc'
-      return try_read_and_write_token_access(
+      try_read_and_write_token_access(
         this.owner,
         unimportedV1Token,
         (response, body) => {
-          expect(response.statusCode).to.equal(302)
-          return expect(response.headers.location).to.equal(
-            '/sign_in_to_v1?return_to=/123abc'
-          )
+          expect(response.statusCode).to.equal(400)
         },
         done
       )
     })
 
-    it('should redirect read only token to v1', function(done) {
+    it('should show error page for read only token to v1', function(done) {
       const unimportedV1Token = 'abcd'
-      return try_read_only_token_access(
+      try_read_only_token_access(
         this.owner,
         unimportedV1Token,
         (response, body) => {
-          expect(response.statusCode).to.equal(302)
-          return expect(response.headers.location).to.equal(
-            '/sign_in_to_v1?return_to=/read/abcd'
-          )
+          expect(response.statusCode).to.equal(400)
         },
         done
       )

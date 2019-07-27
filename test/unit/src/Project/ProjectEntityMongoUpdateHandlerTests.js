@@ -48,9 +48,13 @@ describe('ProjectEntityMongoUpdateHandler', function() {
 
     tk.freeze(Date.now())
     return (this.subject = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'logger-sharelatex': (this.logger = {
           log: sinon.stub(),
+          warn: sinon.stub(),
           error: sinon.stub(),
           err() {}
         }),

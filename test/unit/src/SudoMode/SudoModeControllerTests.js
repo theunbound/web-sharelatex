@@ -36,8 +36,15 @@ describe('SudoModeController', function() {
     }
     this.UserGetter = { getUser: sinon.stub() }
     return (this.SudoModeController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
-        'logger-sharelatex': { log: sinon.stub(), err: sinon.stub() },
+        'logger-sharelatex': {
+          log: sinon.stub(),
+          warn: sinon.stub(),
+          err: sinon.stub()
+        },
         './SudoModeHandler': this.SudoModeHandler,
         '../Authentication/AuthenticationController': this
           .AuthenticationController,

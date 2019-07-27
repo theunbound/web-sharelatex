@@ -1,16 +1,3 @@
-/* eslint-disable
-    camelcase,
-    max-len,
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS102: Remove unnecessary code created because of implicit returns
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
-let SpellingController
 const request = require('request')
 const Settings = require('settings-sharelatex')
 const logger = require('logger-sharelatex')
@@ -18,11 +5,31 @@ const AuthenticationController = require('../Authentication/AuthenticationContro
 
 const TEN_SECONDS = 1000 * 10
 
-module.exports = SpellingController = {
-  proxyRequestToSpellingApi(req, res, next) {
-    const user_id = AuthenticationController.getLoggedInUserId(req)
+const languageCodeIsSupported = code =>
+  Settings.languages.some(lang => lang.code === code)
+
+module.exports = {
+  proxyRequestToSpellingApi(req, res) {
+    const { language } = req.body
+
     let url = req.url.slice('/spelling'.length)
-    url = `/user/${user_id}${url}`
+
+    if (url === '/check') {
+      if (!language) {
+        logger.error('"language" field should be included for spell checking')
+        return res.status(422).send(JSON.stringify({ misspellings: [] }))
+      }
+
+      if (!languageCodeIsSupported(language)) {
+        // this log statement can be changed to 'error' once projects with
+        // unsupported languages are removed from the DB
+        logger.info({ language }, 'language not supported')
+        return res.status(422).send(JSON.stringify({ misspellings: [] }))
+      }
+    }
+
+    const userId = AuthenticationController.getLoggedInUserId(req)
+    url = `/user/${userId}${url}`
     req.headers['Host'] = Settings.apis.spelling.host
     return request({
       url: Settings.apis.spelling.url + url,

@@ -52,6 +52,9 @@ describe('ProjectDetailsHandler', function() {
       removeUserFromProject: sinon.stub().callsArg(2)
     }
     return (this.handler = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         './ProjectGetter': this.ProjectGetter,
         '../../models/Project': {
@@ -63,6 +66,7 @@ describe('ProjectDetailsHandler', function() {
         '../Collaborators/CollaboratorsHandler': this.CollaboratorsHandler,
         'logger-sharelatex': {
           log() {},
+          warn() {},
           err() {}
         },
         './ProjectTokenGenerator': (this.ProjectTokenGenerator = {}),

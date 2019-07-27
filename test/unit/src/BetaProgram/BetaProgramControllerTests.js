@@ -37,6 +37,9 @@ describe('BetaProgramController', function() {
       }
     }
     this.BetaProgramController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         './BetaProgramHandler': (this.BetaProgramHandler = {
           optIn: sinon.stub(),
@@ -50,6 +53,7 @@ describe('BetaProgramController', function() {
         }),
         'logger-sharelatex': (this.logger = {
           log: sinon.stub(),
+          warn: sinon.stub(),
           err: sinon.stub(),
           error: sinon.stub()
         }),

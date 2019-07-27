@@ -241,12 +241,12 @@ module.exports = LimitationsManager = {
       subscription
     ) {
       if (err != null) {
-        logger.err({ err, subscriptionId }, 'error getting subscription')
+        logger.warn({ err, subscriptionId }, 'error getting subscription')
         return callback(err)
       }
       if (subscription == null) {
-        logger.err({ subscriptionId }, 'no subscription found')
-        return callback('no subscription found')
+        logger.warn({ subscriptionId }, 'no subscription found')
+        return callback(new Error('no subscription found'))
       }
 
       const limitReached = LimitationsManager.teamHasReachedMemberLimit(

@@ -30,6 +30,9 @@ describe('AuthenticationController', function() {
     tk.freeze(Date.now())
     this.UserModel = { findOne: sinon.stub() }
     this.AuthenticationController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         './AuthenticationManager': (this.AuthenticationManager = {}),
         '../User/UserUpdater': (this.UserUpdater = {
@@ -48,6 +51,7 @@ describe('AuthenticationController', function() {
         }),
         'logger-sharelatex': (this.logger = {
           log: sinon.stub(),
+          warn: sinon.stub(),
           error: sinon.stub(),
           err: sinon.stub()
         }),

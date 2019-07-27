@@ -29,9 +29,13 @@ const { ObjectId } = require('mongojs')
 describe('CollaboratorsHandler', function() {
   beforeEach(function() {
     this.CollaboratorHandler = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'logger-sharelatex': (this.logger = {
           log: sinon.stub(),
+          warn: sinon.stub(),
           err: sinon.stub()
         }),
         '../User/UserCreator': (this.UserCreator = {}),

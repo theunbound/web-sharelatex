@@ -110,7 +110,7 @@ const mockApiRequest = function(options, callback) {
   if (fixtures[options.url]) {
     return callback(null, { statusCode: 200 }, fixtures[options.url])
   } else {
-    return callback('Not found', { statusCode: 404 })
+    return callback(new Error('Not found'), { statusCode: 404 })
   }
 }
 
@@ -144,11 +144,15 @@ describe('RecurlyWrapper', function() {
     return (this.RecurlyWrapper = RecurlyWrapper = SandboxedModule.require(
       modulePath,
       {
+        globals: {
+          console: console
+        },
         requires: {
           'settings-sharelatex': this.settings,
           'logger-sharelatex': {
             err: sinon.stub(),
             error: sinon.stub(),
+            warn: sinon.stub(),
             log: sinon.stub()
           },
           request: sinon.stub(),

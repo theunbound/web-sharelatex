@@ -37,7 +37,8 @@ describe('ProjectController', function() {
           url: 'chat.com'
         }
       },
-      siteUrl: 'mysite.com'
+      siteUrl: 'mysite.com',
+      algolia: {}
     }
     this.brandVariationDetails = {
       id: '12',
@@ -116,6 +117,9 @@ describe('ProjectController', function() {
     this.getUserAffiliations = sinon.stub().callsArgWith(1, null, [])
 
     this.ProjectController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'settings-sharelatex': this.settings,
         'logger-sharelatex': {
@@ -404,7 +408,7 @@ describe('ProjectController', function() {
       }
 
       this.LimitationsManager.hasPaidSubscription.callsArgWith(1, null, false)
-      this.TagsHandler.getAllTags.callsArgWith(1, null, this.tags, {})
+      this.TagsHandler.getAllTags.callsArgWith(1, null, this.tags)
       this.NotificationsHandler.getUserNotifications = sinon
         .stub()
         .callsArgWith(1, null, this.notifications, {})
@@ -656,7 +660,7 @@ describe('ProjectController', function() {
       }
 
       this.LimitationsManager.hasPaidSubscription.callsArgWith(1, null, false)
-      this.TagsHandler.getAllTags.callsArgWith(1, null, this.tags, {})
+      this.TagsHandler.getAllTags.callsArgWith(1, null, this.tags)
       this.NotificationsHandler.getUserNotifications = sinon
         .stub()
         .callsArgWith(1, null, this.notifications, {})

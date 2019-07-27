@@ -29,22 +29,12 @@ const UserUpdater = require('./UserUpdater')
 const SudoModeHandler = require('../SudoMode/SudoModeHandler')
 const settings = require('settings-sharelatex')
 const Errors = require('../Errors/Errors')
+const OError = require('@overleaf/o-error')
+const HttpErrors = require('../Errors/HttpErrors')
+const EmailHandler = require('../Email/EmailHandler')
 
 module.exports = UserController = {
   tryDeleteUser(req, res, next) {
-    return UserController._tryDeleteUser(UserDeleter.deleteUser, req, res, next)
-  },
-
-  trySoftDeleteUser(req, res, next) {
-    return UserController._tryDeleteUser(
-      UserDeleter.softDeleteUser,
-      req,
-      res,
-      next
-    )
-  },
-
-  _tryDeleteUser(deleteMethod, req, res, next) {
     const user_id = AuthenticationController.getLoggedInUserId(req)
     const { password } = req.body
     logger.log({ user_id }, 'trying to delete user account')
@@ -55,48 +45,60 @@ module.exports = UserController = {
       )
       return res.sendStatus(403)
     }
-    return AuthenticationManager.authenticate(
-      { _id: user_id },
-      password,
-      function(err, user) {
-        if (err != null) {
-          logger.err(
-            { user_id },
-            'error authenticating during attempt to delete account'
-          )
-          return next(err)
-        }
-        if (!user) {
-          logger.err(
-            { user_id },
-            'auth failed during attempt to delete account'
-          )
-          return res.sendStatus(403)
-        }
-        return deleteMethod(user_id, function(err) {
-          if (err != null) {
+    AuthenticationManager.authenticate({ _id: user_id }, password, function(
+      err,
+      user
+    ) {
+      if (err != null) {
+        logger.warn(
+          { user_id },
+          'error authenticating during attempt to delete account'
+        )
+        return next(err)
+      }
+      if (!user) {
+        logger.err({ user_id }, 'auth failed during attempt to delete account')
+        return res.sendStatus(403)
+      }
+      UserDeleter.deleteUser(
+        user_id,
+        { deleterUser: user, ipAddress: req.ip },
+        function(err) {
+          if (err) {
+            let errorData = {
+              message: 'error while deleting user account',
+              info: { user_id }
+            }
             if (err instanceof Errors.SubscriptionAdminDeletionError) {
-              return res.status(422).json({ error: err.name })
+              // set info.public.error for JSON response so frontend can display
+              // a specific message
+              errorData.info.public = {
+                error: 'SubscriptionAdminDeletionError'
+              }
+              return next(
+                new HttpErrors.UnprocessableEntityError(errorData).withCause(
+                  err
+                )
+              )
             } else {
-              logger.err({ user_id }, 'error while deleting user account')
-              return next(err)
+              return next(new OError(errorData).withCause(err))
             }
           }
           const sessionId = req.sessionID
           if (typeof req.logout === 'function') {
             req.logout()
           }
-          return req.session.destroy(function(err) {
+          req.session.destroy(function(err) {
             if (err != null) {
-              logger.err({ err }, 'error destorying session')
+              logger.warn({ err }, 'error destorying session')
               return next(err)
             }
             UserSessionsManager.untrackSession(user, sessionId)
             return res.sendStatus(200)
           })
-        })
-      }
-    )
+        }
+      )
+    })
   },
 
   unsubscribe(req, res) {
@@ -238,7 +240,7 @@ module.exports = UserController = {
     } // passport logout
     return req.session.destroy(function(err) {
       if (err) {
-        logger.err({ err }, 'error destorying session')
+        logger.warn({ err }, 'error destorying session')
         cb(err)
       }
       if (user != null) {
@@ -254,11 +256,29 @@ module.exports = UserController = {
       if (err != null) {
         return next(err)
       }
-      const redirect_url =
-        settings.overleaf != null
-          ? settings.overleaf.host + '/users/ensure_signed_out'
-          : '/login'
+      const redirect_url = '/login'
       return res.redirect(redirect_url)
+    })
+  },
+
+  expireDeletedUser(req, res, next) {
+    const userId = req.params.userId
+    UserDeleter.expireDeletedUser(userId, error => {
+      if (error) {
+        return next(error)
+      }
+
+      res.sendStatus(204)
+    })
+  },
+
+  expireDeletedUsersAfterDuration(req, res, next) {
+    UserDeleter.expireDeletedUsersAfterDuration(error => {
+      if (error) {
+        return next(error)
+      }
+
+      res.sendStatus(204)
     })
   },
 
@@ -305,78 +325,80 @@ module.exports = UserController = {
   },
 
   changePassword(req, res, next) {
-    if (next == null) {
-      next = function(error) {}
-    }
     metrics.inc('user.password-change')
-    const oldPass = req.body.currentPassword
+    const internalError = {
+      message: { type: 'error', text: req.i18n.translate('internal_error') }
+    }
     const user_id = AuthenticationController.getLoggedInUserId(req)
-    return AuthenticationManager.authenticate(
+    AuthenticationManager.authenticate(
       { _id: user_id },
-      oldPass,
-      function(err, user) {
-        if (err != null) {
-          return next(err)
+      req.body.currentPassword,
+      (err, user) => {
+        if (err) {
+          return res.status(500).json(internalError)
         }
-        if (user) {
-          logger.log({ user: user._id }, 'changing password')
-          const { newPassword1 } = req.body
-          const { newPassword2 } = req.body
-          const validationError = AuthenticationManager.validatePassword(
-            newPassword1
-          )
-          if (newPassword1 !== newPassword2) {
-            logger.log({ user }, 'passwords do not match')
-            return res.send({
-              message: {
-                type: 'error',
-                text: 'Your passwords do not match'
-              }
-            })
-          } else if (validationError != null) {
-            logger.log({ user }, validationError.message)
-            return res.send({
-              message: {
-                type: 'error',
-                text: validationError.message
-              }
-            })
-          } else {
-            logger.log({ user }, 'password changed')
-            return AuthenticationManager.setUserPassword(
-              user._id,
-              newPassword1,
-              function(error) {
-                if (error != null) {
-                  return next(error)
-                }
-                return UserSessionsManager.revokeAllUserSessions(
-                  user,
-                  [req.sessionID],
-                  function(err) {
-                    if (err != null) {
-                      return next(err)
-                    }
-                    return res.send({
-                      message: {
-                        type: 'success',
-                        text: 'Your password has been changed'
-                      }
-                    })
-                  }
-                )
-              }
-            )
-          }
-        } else {
-          logger.log({ user_id }, 'current password wrong')
-          return res.send({
+        if (!user) {
+          return res.status(400).json({
             message: {
               type: 'error',
               text: 'Your old password is wrong'
             }
           })
         }
+        if (req.body.newPassword1 !== req.body.newPassword2) {
+          return res.status(400).json({
+            message: {
+              type: 'error',
+              text: req.i18n.translate('password_change_passwords_do_not_match')
+            }
+          })
+        }
+        const validationError = AuthenticationManager.validatePassword(
+          req.body.newPassword1
+        )
+        if (validationError != null) {
+          return res.status(400).json({
+            message: {
+              type: 'error',
+              text: validationError.message
+            }
+          })
+        }
+        AuthenticationManager.setUserPassword(
+          user._id,
+          req.body.newPassword1,
+          err => {
+            if (err) {
+              return res.status(500).json(internalError)
+            }
+            // log errors but do not wait for response
+            EmailHandler.sendEmail(
+              'passwordChanged',
+              { to: user.email },
+              err => {
+                if (err) {
+                  logger.warn(err)
+                }
+              }
+            )
+            UserSessionsManager.revokeAllUserSessions(
+              user,
+              [req.sessionID],
+              err => {
+                if (err != null) {
+                  return res.status(500).json(internalError)
+                }
+                res.json({
+                  message: {
+                    type: 'success',
+                    email: user.email,
+                    text: req.i18n.translate('password_change_successful')
+                  }
+                })
+              }
+            )
+          }
+        )
       }
     )
   }

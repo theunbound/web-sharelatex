@@ -44,6 +44,9 @@ describe('CollaboratorsInviteController', function() {
     }
 
     this.CollaboratorsInviteController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         '../Project/ProjectGetter': (this.ProjectGetter = {}),
         '../Subscription/LimitationsManager': this.LimitationsManager,
@@ -53,6 +56,7 @@ describe('CollaboratorsInviteController', function() {
         'logger-sharelatex': (this.logger = {
           err: sinon.stub(),
           error: sinon.stub(),
+          warn: sinon.stub(),
           log: sinon.stub()
         }),
         '../Editor/EditorRealTimeController': (this.EditorRealTimeController = {

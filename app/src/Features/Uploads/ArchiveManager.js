@@ -57,8 +57,11 @@ const ArchiveManager = {
       // no more entries to read
       return zipfile.on('end', function() {
         if (totalSizeInBytes == null || isNaN(totalSizeInBytes)) {
-          logger.err({ source, totalSizeInBytes }, 'error getting bytes of zip')
-          return callback(new Error('error getting bytes of zip'))
+          logger.warn(
+            { source, totalSizeInBytes },
+            'error getting bytes of zip'
+          )
+          return callback(new Errors.InvalidError('invalid_zip_file'))
         }
         const isTooLarge = totalSizeInBytes > ONE_MEG * 300
         return callback(null, isTooLarge)
@@ -136,6 +139,8 @@ const ArchiveManager = {
       zipfile.on('error', callback)
       // read all the entries
       zipfile.readEntry()
+
+      let entryFileCount = 0
       zipfile.on('entry', function(entry) {
         logger.log(
           { source, fileName: entry.fileName },
@@ -158,13 +163,14 @@ const ArchiveManager = {
               destFile,
               function(err) {
                 if (err != null) {
-                  logger.error(
+                  logger.warn(
                     { err, source, destFile },
                     'error unzipping file entry'
                   )
                   zipfile.close() // bail out, stop reading file entries
                   return callback(err)
                 } else {
+                  entryFileCount++
                   return zipfile.readEntry()
                 }
               }
@@ -176,7 +182,13 @@ const ArchiveManager = {
         })
       })
       // no more entries to read
-      return zipfile.on('end', callback)
+      return zipfile.on('end', () => {
+        if (entryFileCount > 0) {
+          callback()
+        } else {
+          callback(new Errors.InvalidError('empty_zip_file'))
+        }
+      })
     })
   },
 
@@ -191,7 +203,7 @@ const ArchiveManager = {
 
     return ArchiveManager._isZipTooLarge(source, function(err, isTooLarge) {
       if (err != null) {
-        logger.err({ err }, 'error checking size of zip file')
+        logger.warn({ err }, 'error checking size of zip file')
         return callback(err)
       }
 
@@ -207,7 +219,7 @@ const ArchiveManager = {
       ) {
         timer.done()
         if (err != null) {
-          logger.error({ err, source, destination }, 'unzip failed')
+          logger.warn({ err, source, destination }, 'unzip failed')
           return callback(err)
         } else {
           return callback()

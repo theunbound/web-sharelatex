@@ -54,6 +54,7 @@ describe('UserSessionsManager', function() {
     this.logger = {
       err: sinon.stub(),
       error: sinon.stub(),
+      warn: sinon.stub(),
       log: sinon.stub()
     }
     this.settings = {
@@ -62,6 +63,9 @@ describe('UserSessionsManager', function() {
       }
     }
     return (this.UserSessionsManager = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'logger-sharelatex': this.logger,
         'settings-sharelatex': this.settings,

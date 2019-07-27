@@ -44,6 +44,9 @@ describe('UserMembershipAuthorization', function() {
     return (this.UserMembershipAuthorization = SandboxedModule.require(
       modulePath,
       {
+        globals: {
+          console: console
+        },
         requires: {
           '../Authentication/AuthenticationController': this
             .AuthenticationController,
@@ -55,6 +58,7 @@ describe('UserMembershipAuthorization', function() {
           request: (this.request = sinon.stub().yields(null, null, {})),
           'logger-sharelatex': {
             log() {},
+            warn() {},
             err() {}
           }
         }

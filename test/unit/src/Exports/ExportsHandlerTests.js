@@ -27,9 +27,13 @@ describe('ExportsHandler', function() {
       }
     }
     this.ExportsHandler = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'logger-sharelatex': {
           log() {},
+          warn() {},
           err() {}
         },
         '../Project/ProjectGetter': (this.ProjectGetter = {}),

@@ -29,11 +29,18 @@ describe('SudoModeMiddleware', function() {
       setRedirectInSession: sinon.stub()
     }
     return (this.SudoModeMiddleware = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         './SudoModeHandler': this.SudoModeHandler,
         '../Authentication/AuthenticationController': this
           .AuthenticationController,
-        'logger-sharelatex': { log: sinon.stub(), err: sinon.stub() },
+        'logger-sharelatex': {
+          log: sinon.stub(),
+          warn: sinon.stub(),
+          err: sinon.stub()
+        },
         'settings-sharelatex': (this.Settings = {})
       }
     }))

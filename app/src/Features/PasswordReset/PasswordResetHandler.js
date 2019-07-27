@@ -1,179 +1,104 @@
-/* eslint-disable
-    camelcase,
-    handle-callback-err,
-    max-len,
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS102: Remove unnecessary code created because of implicit returns
- * DS207: Consider shorter variations of null checks
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
-let PasswordResetHandler
 const settings = require('settings-sharelatex')
-const async = require('async')
 const UserGetter = require('../User/UserGetter')
 const OneTimeTokenHandler = require('../Security/OneTimeTokenHandler')
 const EmailHandler = require('../Email/EmailHandler')
 const AuthenticationManager = require('../Authentication/AuthenticationManager')
-const logger = require('logger-sharelatex')
-const V1Api = require('../V1/V1Api')
 
-module.exports = PasswordResetHandler = {
+const PasswordResetHandler = {
   generateAndEmailResetToken(email, callback) {
-    if (callback == null) {
-      callback = function(error, status) {}
-    }
-    return PasswordResetHandler._getPasswordResetData(email, function(
-      error,
-      exists,
-      data
-    ) {
-      if (error != null) {
-        return callback(error, null)
-      } else if (exists) {
-        return OneTimeTokenHandler.getNewToken('password', data, function(
-          err,
-          token
-        ) {
+    UserGetter.getUserByAnyEmail(email, (err, user) => {
+      if (err || !user) {
+        return callback(err, null)
+      }
+      if (user.email !== email) {
+        return callback(null, 'secondary')
+      }
+      const data = { user_id: user._id.toString(), email: email }
+      OneTimeTokenHandler.getNewToken('password', data, (err, token) => {
+        if (err) {
+          return callback(err)
+        }
+        const emailOptions = {
+          to: email,
+          setNewPasswordUrl: `${
+            settings.siteUrl
+          }/user/password/set?passwordResetToken=${token}&email=${encodeURIComponent(
+            email
+          )}`
+        }
+        EmailHandler.sendEmail('passwordResetRequested', emailOptions, err => {
           if (err) {
             return callback(err)
           }
-          const emailOptions = {
-            to: email,
-            setNewPasswordUrl: `${
-              settings.siteUrl
-            }/user/password/set?passwordResetToken=${token}&email=${encodeURIComponent(
-              email
-            )}`
-          }
-          return EmailHandler.sendEmail(
-            'passwordResetRequested',
-            emailOptions,
-            function(error) {
-              if (error != null) {
-                return callback(error)
-              }
-              return callback(null, 'primary')
-            }
-          )
+          callback(null, 'primary')
         })
-      } else {
-        return UserGetter.getUserByAnyEmail(email, function(err, user) {
-          if (!user) {
-            return callback(error, null)
-          } else if (
-            (user.overleaf != null ? user.overleaf.id : undefined) == null
-          ) {
-            return callback(error, 'sharelatex')
-          } else {
-            return callback(error, 'secondary')
-          }
-        })
-      }
+      })
     })
   },
 
   setNewUserPassword(token, password, callback) {
-    if (callback == null) {
-      callback = function(error, found, user_id) {}
-    }
-    return OneTimeTokenHandler.getValueFromTokenAndExpire(
-      'password',
-      token,
-      function(err, data) {
-        if (err) {
-          return callback(err)
-        }
-        if (data == null) {
-          return callback(null, false, null)
-        }
-        if (typeof data === 'string') {
-          // Backwards compatible with old format.
-          // Tokens expire after 1h, so this can be removed soon after deploy.
-          // Possibly we should keep this until we do an onsite release too.
-          data = { user_id: data }
-        }
-        if (data.user_id != null) {
-          return AuthenticationManager.setUserPassword(
-            data.user_id,
-            password,
-            function(err, reset) {
-              if (err) {
-                return callback(err)
-              }
-              return callback(null, reset, data.user_id)
-            }
-          )
-        } else if (data.v1_user_id != null) {
-          return AuthenticationManager.setUserPasswordInV1(
-            data.v1_user_id,
-            password,
-            function(error, reset) {
-              if (error != null) {
-                return callback(error)
-              }
-              return UserGetter.getUser(
-                { 'overleaf.id': data.v1_user_id },
-                { _id: 1 },
-                function(error, user) {
-                  if (error != null) {
-                    return callback(error)
-                  }
-                  return callback(
-                    null,
-                    reset,
-                    user != null ? user._id : undefined
-                  )
-                }
-              )
-            }
-          )
-        }
+    PasswordResetHandler.getUserForPasswordResetToken(token, (err, user) => {
+      if (err) {
+        return callback(err)
       }
-    )
-  },
-
-  _getPasswordResetData(email, callback) {
-    if (callback == null) {
-      callback = function(error, exists, data) {}
-    }
-    if (settings.overleaf != null) {
-      // Overleaf v2
-      return V1Api.request(
-        {
-          url: '/api/v1/sharelatex/user_emails',
-          qs: {
-            email
-          },
-          expectedStatusCodes: [404]
-        },
-        function(error, response, body) {
-          if (error != null) {
-            return callback(error)
+      if (!user) {
+        return callback(null, false, null)
+      }
+      AuthenticationManager.setUserPassword(
+        user._id,
+        password,
+        (err, reset) => {
+          if (err) {
+            return callback(err)
           }
-          if (response.statusCode === 404) {
-            return callback(null, false)
-          } else {
-            return callback(null, true, { v1_user_id: body.user_id })
-          }
+          callback(null, reset, user._id)
         }
       )
-    } else {
-      // ShareLaTeX
-      return UserGetter.getUserByMainEmail(email, function(err, user) {
-        if (err) {
-          return callback(err)
+    })
+  },
+
+  getUserForPasswordResetToken(token, callback) {
+    OneTimeTokenHandler.getValueFromTokenAndExpire(
+      'password',
+      token,
+      (err, data) => {
+        if (err != null) {
+          if (err.name === 'NotFoundError') {
+            return callback(null, null)
+          } else {
+            return callback(err)
+          }
         }
-        if (user == null || user.holdingAccount || user.overleaf != null) {
-          logger.err({ email }, 'user could not be found for password reset')
-          return callback(null, false)
+        if (data == null || data.email == null) {
+          return callback(null, null)
         }
-        return callback(null, true, { user_id: user._id })
-      })
-    }
+        UserGetter.getUserByMainEmail(
+          data.email,
+          { _id: 1, 'overleaf.id': 1 },
+          (err, user) => {
+            if (err != null) {
+              callback(err)
+            } else if (user == null) {
+              callback(null, null)
+            } else if (
+              data.user_id != null &&
+              data.user_id === user._id.toString()
+            ) {
+              callback(null, user)
+            } else if (
+              data.v1_user_id != null &&
+              user.overleaf != null &&
+              data.v1_user_id === user.overleaf.id
+            ) {
+              callback(null, user)
+            } else {
+              callback(null, null)
+            }
+          }
+        )
+      }
+    )
   }
 }
+
+module.exports = PasswordResetHandler

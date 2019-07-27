@@ -48,6 +48,9 @@ describe('UserGetter', function() {
     this.getUserAffiliations = sinon.stub().callsArgWith(1, null, [])
 
     return (this.UserGetter = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'logger-sharelatex': {
           log() {}
@@ -75,17 +78,6 @@ describe('UserGetter', function() {
         user.should.deep.equal(this.fakeUser)
         return done()
       })
-    })
-
-    it('should not allow email in query', function(done) {
-      return this.UserGetter.getUser(
-        { email: 'foo@bar.com' },
-        {},
-        (error, user) => {
-          error.should.exist
-          return done()
-        }
-      )
     })
 
     it('should not allow null query', function(done) {

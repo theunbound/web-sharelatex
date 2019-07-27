@@ -22,6 +22,7 @@ const async = require('async')
 const { Project } = require('../../models/Project')
 const logger = require('logger-sharelatex')
 const LockManager = require('../../infrastructure/LockManager')
+const { DeletedProject } = require('../../models/DeletedProject')
 
 module.exports = ProjectGetter = {
   EXCLUDE_DEPTH: 8,
@@ -122,7 +123,7 @@ module.exports = ProjectGetter = {
 
     return db.projects.find(query, projection, function(err, project) {
       if (err != null) {
-        logger.err({ err, query, projection }, 'error getting project')
+        logger.warn({ err, query, projection }, 'error getting project')
         return callback(err)
       }
       return callback(null, project != null ? project[0] : undefined)
@@ -206,6 +207,15 @@ module.exports = ProjectGetter = {
         }
       )
     })
+  },
+
+  getUsersDeletedProjects(user_id, callback) {
+    DeletedProject.find(
+      {
+        'deleterData.deletedProjectOwnerId': user_id
+      },
+      callback
+    )
   }
 }
 ;['getProject', 'getProjectWithoutDocLines'].map(method =>

@@ -14,7 +14,6 @@ let TokenAccessController
 const ProjectController = require('../Project/ProjectController')
 const AuthenticationController = require('../Authentication/AuthenticationController')
 const TokenAccessHandler = require('./TokenAccessHandler')
-const Features = require('../../infrastructure/Features')
 const Errors = require('../Errors/Errors')
 const logger = require('logger-sharelatex')
 const settings = require('settings-sharelatex')
@@ -31,7 +30,7 @@ module.exports = TokenAccessController = {
       userId,
       function(err, project) {
         if (err != null) {
-          logger.err(
+          logger.warn(
             { err, token, userId },
             '[TokenAccess] error finding project with higher access'
           )
@@ -66,7 +65,7 @@ module.exports = TokenAccessController = {
       projectExists
     ) {
       if (err != null) {
-        logger.err(
+        logger.warn(
           { err, token, userId },
           '[TokenAccess] error getting project by readAndWrite token'
         )
@@ -143,7 +142,7 @@ module.exports = TokenAccessController = {
           project._id,
           function(err) {
             if (err != null) {
-              logger.err(
+              logger.warn(
                 { err, token, userId, projectId: project._id },
                 '[TokenAccess] error adding user to project with readAndWrite token'
               )
@@ -185,7 +184,7 @@ module.exports = TokenAccessController = {
         projectExists
       ) {
         if (err != null) {
-          logger.err(
+          logger.warn(
             { err, token, userId },
             '[TokenAccess] error getting project by readOnly token'
           )
@@ -258,7 +257,7 @@ module.exports = TokenAccessController = {
               project._id,
               function(err) {
                 if (err != null) {
-                  logger.err(
+                  logger.warn(
                     { err, token, userId, projectId: project._id },
                     '[TokenAccess] error adding user to project with readAndWrite token'
                   )
@@ -280,18 +279,15 @@ module.exports = TokenAccessController = {
 
   _handleV1Project(token, userId, redirectPath, res, next) {
     if (userId == null) {
-      if (Features.hasFeature('force-import-to-v2')) {
-        return res.render('project/v2-import', { loginRedirect: redirectPath })
-      } else {
-        return res.redirect(302, `/sign_in_to_v1?return_to=${redirectPath}`)
-      }
+      return res.render('project/v2-import', { loginRedirect: redirectPath })
     } else {
-      return TokenAccessHandler.getV1DocInfo(token, userId, function(
-        err,
-        doc_info
-      ) {
+      TokenAccessHandler.getV1DocInfo(token, userId, function(err, doc_info) {
         if (err != null) {
           return next(err)
+        }
+        if (!doc_info) {
+          res.status(400)
+          return res.render('project/cannot-import-v1-project')
         }
         if (!doc_info.exists) {
           return next(new Errors.NotFoundError())
@@ -299,17 +295,13 @@ module.exports = TokenAccessController = {
         if (doc_info.exported) {
           return next(new Errors.NotFoundError())
         }
-        if (Features.hasFeature('force-import-to-v2')) {
-          return res.render('project/v2-import', {
-            projectId: token,
-            hasOwner: doc_info.has_owner,
-            name: doc_info.name || 'Untitled',
-            hasAssignment: doc_info.has_assignment,
-            brandInfo: doc_info.brand_info
-          })
-        } else {
-          return res.redirect(302, `/sign_in_to_v1?return_to=${redirectPath}`)
-        }
+        return res.render('project/v2-import', {
+          projectId: token,
+          hasOwner: doc_info.has_owner,
+          name: doc_info.name || 'Untitled',
+          hasAssignment: doc_info.has_assignment,
+          brandInfo: doc_info.brand_info
+        })
       })
     }
   }

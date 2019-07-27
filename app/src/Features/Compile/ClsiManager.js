@@ -203,7 +203,7 @@ module.exports = ClsiManager = {
       req.compile != null ? req.compile.resources : undefined,
       function(err, validationProblems) {
         if (err != null) {
-          logger.err(
+          logger.warn(
             err,
             project_id,
             'could not check resources for potential problems before sending to clsi'
@@ -230,7 +230,7 @@ module.exports = ClsiManager = {
           options.compileGroup,
           function(error, response) {
             if (error != null) {
-              logger.err(
+              logger.warn(
                 { err: error, project_id },
                 'error sending request to clsi'
               )
@@ -256,7 +256,7 @@ module.exports = ClsiManager = {
               clsiServerId
             ) {
               if (err != null) {
-                logger.err({ err, project_id }, 'error getting server id')
+                logger.warn({ err, project_id }, 'error getting server id')
                 return callback(err)
               }
               const outputFiles = ClsiManager._parseOutputFiles(
@@ -289,7 +289,7 @@ module.exports = ClsiManager = {
           const startTime = new Date()
           return ClsiCookieManager.getCookieJar(project_id, function(err, jar) {
             if (err != null) {
-              logger.err({ err }, 'error getting cookie jar for clsi request')
+              logger.warn({ err }, 'error getting cookie jar for clsi request')
               return callback(err)
             }
             opts.jar = jar
@@ -302,7 +302,7 @@ module.exports = ClsiManager = {
                 }`
               )
               if (err != null) {
-                logger.err(
+                logger.warn(
                   { err, project_id, url: opts != null ? opts.url : undefined },
                   'error making request to clsi'
                 )
@@ -405,7 +405,7 @@ module.exports = ClsiManager = {
       jar
     ) {
       if (err != null) {
-        logger.err({ err }, 'error getting cookie jar for clsi request')
+        logger.warn({ err }, 'error getting cookie jar for clsi request')
         return callback(err)
       }
       opts.jar = jar
@@ -483,7 +483,7 @@ module.exports = ClsiManager = {
         error = new Error(
           `CLSI returned non-success code: ${response.statusCode}`
         )
-        logger.error({ err: error, project_id }, 'CLSI returned failure code')
+        logger.warn({ err: error, project_id }, 'CLSI returned failure code')
         return callback(error, body)
       }
     })
@@ -994,7 +994,7 @@ module.exports = ClsiManager = {
           error = new Error(
             `CLSI returned non-success code: ${response.statusCode}`
           )
-          logger.error({ err: error, project_id }, 'CLSI returned failure code')
+          logger.warn({ err: error, project_id }, 'CLSI returned failure code')
           return callback(error, body)
         }
       })

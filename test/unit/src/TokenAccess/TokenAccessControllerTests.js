@@ -42,6 +42,9 @@ describe('TokenAccessController', function() {
     }
     this.userId = ObjectId()
     this.TokenAccessController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         '../Project/ProjectController': (this.ProjectController = {}),
         '../Authentication/AuthenticationController': (this.AuthenticationController = {}),
@@ -57,7 +60,11 @@ describe('TokenAccessController', function() {
         '../../infrastructure/Features': (this.Features = {
           hasFeature: sinon.stub().returns(false)
         }),
-        'logger-sharelatex': { log: sinon.stub(), err: sinon.stub() },
+        'logger-sharelatex': {
+          log: sinon.stub(),
+          warn: sinon.stub(),
+          err: sinon.stub()
+        },
         'settings-sharelatex': {
           overleaf: {
             host: 'http://overleaf.test:5000'
@@ -420,15 +427,16 @@ describe('TokenAccessController', function() {
               )
             })
 
-            it('should redirect to v1', function(done) {
-              expect(this.res.redirect.callCount).to.equal(1)
-              expect(
-                this.res.redirect.calledWith(
-                  302,
-                  '/sign_in_to_v1?return_to=/123abc'
-                )
-              ).to.equal(true)
-              return done()
+            it('should not redirect to v1', function(done) {
+              expect(this.res.redirect.callCount).to.equal(0)
+              done()
+            })
+
+            it('should show project import page', function(done) {
+              expect(this.res.render.calledWith('project/v2-import')).to.equal(
+                true
+              )
+              done()
             })
           })
 
@@ -1098,6 +1106,7 @@ describe('TokenAccessController', function() {
           this.req = new MockRequest()
           this.res = new MockResponse()
           this.res.redirect = sinon.stub()
+          this.res.render = sinon.stub()
           this.next = sinon.stub()
           this.req.params['read_only_token'] = 'abcd'
           this.TokenAccessHandler.findProjectWithReadOnlyToken = sinon
@@ -1106,22 +1115,21 @@ describe('TokenAccessController', function() {
           this.TokenAccessHandler.checkV1ProjectExported = sinon
             .stub()
             .callsArgWith(1, null, false)
-          return this.TokenAccessController.readOnlyToken(
+          this.TokenAccessController.readOnlyToken(
             this.req,
             this.res,
             this.next
           )
         })
 
-        it('should redirect to v1', function(done) {
-          expect(this.res.redirect.callCount).to.equal(1)
-          expect(
-            this.res.redirect.calledWith(
-              302,
-              '/sign_in_to_v1?return_to=/read/abcd'
-            )
-          ).to.equal(true)
-          return done()
+        it('should not redirect to v1', function(done) {
+          expect(this.res.redirect.callCount).to.equal(0)
+          done()
+        })
+
+        it('should show project import page', function(done) {
+          expect(this.res.render.calledWith('project/v2-import')).to.equal(true)
+          done()
         })
       })
 
@@ -1752,22 +1760,24 @@ describe('TokenAccessController', function() {
               exists: true,
               exported: false
             })
-            return this.TokenAccessController.readOnlyToken(
+            this.res.render = sinon.stub()
+            this.TokenAccessController.readOnlyToken(
               this.req,
               this.res,
               this.next
             )
           })
 
-          it('should redirect to v1', function(done) {
-            expect(this.res.redirect.callCount).to.equal(1)
-            expect(
-              this.res.redirect.calledWith(
-                302,
-                `/sign_in_to_v1?return_to=/read/${this.readOnlyToken}`
-              )
-            ).to.equal(true)
-            return done()
+          it('should not redirect to v1', function(done) {
+            expect(this.res.redirect.callCount).to.equal(0)
+            done()
+          })
+
+          it('should show project import page', function(done) {
+            expect(this.res.render.calledWith('project/v2-import')).to.equal(
+              true
+            )
+            done()
           })
         })
 
@@ -1806,22 +1816,24 @@ describe('TokenAccessController', function() {
                 exists: true,
                 exported: false
               })
-              return this.TokenAccessController.readOnlyToken(
+              this.res.render = sinon.stub()
+              this.TokenAccessController.readOnlyToken(
                 this.req,
                 this.res,
                 this.next
               )
             })
 
-            it('should redirect to v1', function(done) {
-              expect(this.res.redirect.callCount).to.equal(1)
-              expect(
-                this.res.redirect.calledWith(
-                  302,
-                  `/sign_in_to_v1?return_to=/read/${this.readOnlyToken}`
-                )
-              ).to.equal(true)
-              return done()
+            it('should not redirect to v1', function(done) {
+              expect(this.res.redirect.callCount).to.equal(0)
+              done()
+            })
+
+            it('should show project import page', function(done) {
+              expect(this.res.render.calledWith('project/v2-import')).to.equal(
+                true
+              )
+              done()
             })
           })
 

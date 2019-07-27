@@ -27,8 +27,15 @@ describe('MetaController', function() {
       getMetaForDoc: sinon.stub()
     }
     return (this.MetadataController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
-        'logger-sharelatex': { log: sinon.stub(), err: sinon.stub() },
+        'logger-sharelatex': {
+          log: sinon.stub(),
+          warn: sinon.stub(),
+          err: sinon.stub()
+        },
         '../Editor/EditorRealTimeController': this.EditorRealTimeController,
         './MetaHandler': this.MetaHandler
       }

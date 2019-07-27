@@ -68,6 +68,14 @@ module.exports = class Router {
 
     webRouter.post('/login', AuthenticationController.passportLogin)
 
+    webRouter.get(
+      '/read-only/one-time-login',
+      UserPagesController.oneTimeLoginPage
+    )
+    AuthenticationController.addEndpointToLoginWhitelist(
+      '/read-only/one-time-login'
+    )
+
     webRouter.get('/logout', UserPagesController.logoutPage)
     webRouter.post('/logout', UserController.logout)
 
@@ -576,6 +584,27 @@ module.exports = class Router {
       AuthorizationMiddleware.ensureUserCanReadProject,
       AuthenticationController.requireLogin(),
       MetaController.broadcastMetadataForDoc
+    )
+
+    privateApiRouter.post(
+      '/internal/expire-deleted-projects-after-duration',
+      AuthenticationController.httpAuth,
+      ProjectController.expireDeletedProjectsAfterDuration
+    )
+    privateApiRouter.post(
+      '/internal/expire-deleted-users-after-duration',
+      AuthenticationController.httpAuth,
+      UserController.expireDeletedUsersAfterDuration
+    )
+    privateApiRouter.post(
+      '/internal/project/:projectId/expire-deleted-project',
+      AuthenticationController.httpAuth,
+      ProjectController.expireDeletedProject
+    )
+    privateApiRouter.post(
+      '/internal/users/:userId/expire',
+      AuthenticationController.httpAuth,
+      UserController.expireDeletedUser
     )
 
     webRouter.get(

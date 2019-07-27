@@ -162,6 +162,31 @@ module.exports = ProjectController = {
     }
   },
 
+  expireDeletedProjectsAfterDuration(req, res) {
+    logger.log(
+      'received request to look for old deleted projects and expire them'
+    )
+    projectDeleter.expireDeletedProjectsAfterDuration(function(err) {
+      if (err != null) {
+        return res.sendStatus(500)
+      } else {
+        return res.sendStatus(200)
+      }
+    })
+  },
+
+  expireDeletedProject(req, res, next) {
+    const { projectId } = req.params
+    logger.log('received request to expire deleted project', { projectId })
+    projectDeleter.expireDeletedProject(projectId, function(err) {
+      if (err != null) {
+        return next(err)
+      } else {
+        return res.sendStatus(200)
+      }
+    })
+  },
+
   restoreProject(req, res) {
     const project_id = req.params.Project_id
     logger.log({ project_id }, 'received request to restore project')
@@ -190,7 +215,7 @@ module.exports = ProjectController = {
       projectName,
       function(err, project) {
         if (err != null) {
-          logger.error(
+          logger.warn(
             { err, project_id, user_id: currentUser._id },
             'error cloning project'
           )
@@ -399,14 +424,13 @@ module.exports = ProjectController = {
       },
       function(err, results) {
         if (err != null) {
-          logger.err({ err }, 'error getting data for project list page')
+          logger.warn({ err }, 'error getting data for project list page')
           return next(err)
         }
-        logger.log({ results, user_id }, 'rendering project list')
         const v1Tags =
           (results.v1Projects != null ? results.v1Projects.tags : undefined) ||
           []
-        const tags = results.tags[0].concat(v1Tags)
+        const tags = results.tags.concat(v1Tags)
         const notifications = require('underscore').map(
           results.notifications,
           function(notification) {
@@ -468,14 +492,9 @@ module.exports = ProjectController = {
           }
 
           if (
-            __guard__(
-              Settings != null ? Settings.algolia : undefined,
-              x => x.app_id
-            ) != null &&
-            __guard__(
-              Settings != null ? Settings.algolia : undefined,
-              x1 => x1.read_only_api_key
-            ) != null
+            Settings.algolia &&
+            Settings.algolia.app_id &&
+            Settings.algolia.read_only_api_key
           ) {
             viewModel.showUserDetailsArea = true
             viewModel.algolia_api_key = Settings.algolia.read_only_api_key
@@ -636,7 +655,7 @@ module.exports = ProjectController = {
       },
       function(err, results) {
         if (err != null) {
-          logger.err({ err }, 'error getting details for project page')
+          logger.warn({ err }, 'error getting details for project page')
           return next(err)
         }
         const { project } = results

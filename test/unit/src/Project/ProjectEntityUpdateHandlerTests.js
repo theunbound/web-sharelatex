@@ -85,9 +85,13 @@ describe('ProjectEntityUpdateHandler', function() {
     return (this.ProjectEntityUpdateHandler = SandboxedModule.require(
       modulePath,
       {
+        globals: {
+          console: console
+        },
         requires: {
           'logger-sharelatex': (this.logger = {
             log: sinon.stub(),
+            warn: sinon.stub(),
             error: sinon.stub(),
             err() {}
           }),
@@ -446,7 +450,7 @@ describe('ProjectEntityUpdateHandler', function() {
       })
 
       it('should log out the error', function() {
-        return this.logger.error
+        return this.logger.warn
           .calledWith(
             {
               project_id,

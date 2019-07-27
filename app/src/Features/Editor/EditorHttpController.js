@@ -28,6 +28,7 @@ const CollaboratorsInviteHandler = require('../Collaborators/CollaboratorsInvite
 const PrivilegeLevels = require('../Authorization/PrivilegeLevels')
 const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
 const AuthenticationController = require('../Authentication/AuthenticationController')
+const Errors = require('../Errors/Errors')
 
 module.exports = EditorHttpController = {
   joinProject(req, res, next) {
@@ -73,7 +74,7 @@ module.exports = EditorHttpController = {
         return callback(error)
       }
       if (project == null) {
-        return callback(new Error('not found'))
+        return callback(new Errors.NotFoundError('project not found'))
       }
       return CollaboratorsHandler.getInvitedMembersWithPrivilegeLevels(
         project_id,
@@ -158,11 +159,11 @@ module.exports = EditorHttpController = {
       'editor',
       user_id,
       function(error, doc) {
-        if (error === 'project_has_to_many_files') {
+        if (error && error.message === 'project_has_to_many_files') {
           return res
             .status(400)
             .json(req.i18n.translate('project_has_to_many_files'))
-        } else if (error != null) {
+        } else if (error) {
           return next(error)
         } else {
           return res.json(doc)
@@ -184,15 +185,13 @@ module.exports = EditorHttpController = {
       name,
       'editor',
       function(error, doc) {
-        if (error === 'project_has_to_many_files') {
+        if (error && error.message === 'project_has_to_many_files') {
           return res
             .status(400)
             .json(req.i18n.translate('project_has_to_many_files'))
-        } else if (
-          (error != null ? error.message : undefined) === 'invalid element name'
-        ) {
+        } else if (error && error.message === 'invalid element name') {
           return res.status(400).json(req.i18n.translate('invalid_file_name'))
-        } else if (error != null) {
+        } else if (error) {
           return next(error)
         } else {
           return res.json(doc)

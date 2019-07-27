@@ -27,9 +27,13 @@ describe('CompileManager', function() {
     const { rateLimitGetStub } = this
     this.ratelimiter = { addCount: sinon.stub() }
     this.CompileManager = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'settings-sharelatex': (this.settings = {
-          redis: { web: { host: 'localhost', port: 42 } }
+          redis: { web: { host: 'localhost', port: 42 } },
+          rateLimit: { autoCompile: {} }
         }),
         '../../infrastructure/RedisWrapper': {
           client: () => {

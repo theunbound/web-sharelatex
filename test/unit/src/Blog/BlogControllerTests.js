@@ -28,11 +28,15 @@ describe('BlogController', function() {
         blog: {
           url: 'http://blog.sharelatex.env'
         }
-      }
+      },
+      cdn: { web: { host: null } }
     }
     this.request = { get: sinon.stub() }
     this.ErrorController = {}
     this.BlogController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'settings-sharelatex': this.settings,
         'logger-sharelatex': {

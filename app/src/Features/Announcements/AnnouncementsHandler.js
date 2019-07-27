@@ -40,7 +40,7 @@ module.exports = AnnouncementsHandler = {
       callback = function(err, announcements) {}
     }
     if (user == null && user._id == null) {
-      return callback('user not supplied')
+      return callback(new Error('user not supplied'))
     }
 
     const timestamp = user._id.toString().substring(0, 8)
@@ -61,7 +61,7 @@ module.exports = AnnouncementsHandler = {
       },
       function(err, results) {
         if (err != null) {
-          logger.err(
+          logger.warn(
             { err, user_id: user._id },
             'error getting unread announcements'
           )

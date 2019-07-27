@@ -60,10 +60,14 @@ describe('UserPagesController', function() {
       setRedirectInSession: sinon.stub()
     }
     this.UserPagesController = SandboxedModule.require(modulePath, {
+      globals: {
+        console: console
+      },
       requires: {
         'settings-sharelatex': this.settings,
         'logger-sharelatex': {
           log() {},
+          warn() {},
           err() {}
         },
         './UserGetter': this.UserGetter,
