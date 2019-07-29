@@ -298,18 +298,25 @@ module.exports = ProjectDuplicator = {
                 transforms.rootDocNameTransform,
                 cb
               )
-            },
-            // Globalize projects
-            universalCollab(cb) {
-              User.find({_id: {$ne: owner._id}}, {_id: 1}, (err, otherUsers) => {
-                if ( err != null ) return cb(err);
-                newProject.collaberator_refs =
-                  otherUsers.map( user => user._id ).concat(
-                    newProject.collaberator_refs
-                  );
-                cb(null);
-              });
-            }
+            }// ,
+            // // Globalize projects
+            // universalCollab(cb) {
+            //   User.find({_id: {$ne: owner._id}}, {_id: 1}, (err, otherUsers) => {
+            //     if ( err != null ) return cb(err);
+            //     otherUsers = otherUsers.map( user => user._id );
+            //     newProject.collaborator_refs.forEach( user => {
+            //       if ( user != owner._id && !otherUsers.includes(user) ) {
+            //         otherUsers.push(user);
+            //       }
+            //     });
+            //     newProject.collaberator_refs = otherUsers;
+            //     newProject.collaberator_refs =
+            //       otherUsers.map( user => user._id ).concat(
+            //         newProject.collaberator_refs
+            //       );
+            //     cb(null);
+            //   });
+            // }
           }
 
           // Copy the contents of the original project into the new project

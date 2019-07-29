@@ -128,7 +128,7 @@ const ProjectCreationHandler = {
         );
       }, (cb) => {
         // Globalize projects
-        User.find({ _id: {$ne: owner_id}}, {_id:1}, (err, docs) => {
+        User.find({ _id: {$ne: attributes.owner_ref}}, {_id:1}, (err, docs) => {
           if ( err != null ) return cb(err);
           docs.forEach( doc => project.collaberator_refs.push(doc._id) );
           return cb(null);
