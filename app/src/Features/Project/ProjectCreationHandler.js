@@ -131,7 +131,9 @@ const ProjectCreationHandler = {
         User.find({ _id: {$ne: attributes.owner_ref}}, {_id:1}, (err, docs) => {
           if ( err != null ) return cb(err);
           logger.log({owner: attributes.owner_ref, users: docs}, "globalizing project for owner");
-          project.collaberator_refs = docs.map( doc => doc._id );
+          if ( docs.length ) {
+            project.collaberator_refs = docs.map( doc => doc._id );
+          }
           // docs.forEach( doc => project.collaberator_refs.push(doc._id) );
           return cb(null);
         });
