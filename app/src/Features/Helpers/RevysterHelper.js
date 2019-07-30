@@ -132,7 +132,7 @@ module.exports = RevysterHelper = {
   
   async initDb( retryCount /*optional*/ ) {
     const parachute = Error("initDb parachute");
-    let userId = "";
+    let user = {};
     const createSingleDocumentProject = async(docName) => {
       // We look for docs in /app/templates/project_files
       const docPath = path.resolve(__dirname
@@ -142,7 +142,7 @@ module.exports = RevysterHelper = {
       let docLines = (async() =>
                       (await fs.readFile(docPath, 'utf8')).split('\n'))();
       let newProject = promiseWrapMethods( ProjectCreationHandler )
-          .createBlankProject(userId, docName.replace(".tex", ""));
+          .createBlankProject(user._id, docName.replace(".tex", ""));
       
       [docLines, [newProject]] = await Promise.all([docLines, newProject]);
       logger.log({
@@ -157,7 +157,7 @@ module.exports = RevysterHelper = {
 
     try {
       logger.log("Performing database initialisation for Revy-use.");
-      let [user] = await promiseWrapMethods( UserGetter )
+      [user] = await promiseWrapMethods( UserGetter )
           .getUser( {isAdmin: true}, {} );
       if (user == null) {
         logger.log(
@@ -171,7 +171,7 @@ module.exports = RevysterHelper = {
       } else {
         logger.log(user, "Admin user selected for template ownership.");
       }
-      userId = user._id.toString();
+      let userId = user._id.toString();
       let [tags] = await promiseWrapMethods(TagsHandler).getAllTags(null);
       let tagNames = tags.map( tag => tag.name );
       logger.log({ tagNames: tagNames }, "Found tags.");
