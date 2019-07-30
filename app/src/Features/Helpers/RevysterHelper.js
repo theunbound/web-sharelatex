@@ -151,7 +151,7 @@ module.exports = RevysterHelper = {
         newProject: newProject
       }, "createSingleProjectDocument creating root doc.");
       await promiseWrapMethods(ProjectCreationHandler)
-        ._createRootDoc(newProject, userId, docLines, docName);
+        ._createRootDoc(newProject, user._id, docLines, docName);
       return newProject;
     };
 
