@@ -1,4 +1,4 @@
-/* eslint-disable
+'/* eslint-disable
     handle-callback-err,
     max-len,
 */
@@ -25,7 +25,7 @@ const Analytics = require('../Analytics/AnalyticsManager')
 const settings = require('settings-sharelatex')
 const EmailHelper = require('../Helpers/EmailHelper')
 
-module.exports = UserRegistrationHandler = {
+var UserRegistrationHandler = module.exports = {
   _registrationRequestIsValid(body, callback) {
     const invalidEmail = AuthenticationManager.validateEmail(body.email || '')
     const invalidPassword = AuthenticationManager.validatePassword(
@@ -134,7 +134,7 @@ module.exports = UserRegistrationHandler = {
         const ONE_WEEK = 7 * 24 * 60 * 60 // seconds
         return OneTimeTokenHandler.getNewToken(
           'password',
-          user._id,
+          { user_id: user._id, email: email },
           { expiresIn: ONE_WEEK },
           function(err, token) {
             if (err != null) {
