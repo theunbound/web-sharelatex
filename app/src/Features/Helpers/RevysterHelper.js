@@ -204,7 +204,7 @@ module.exports = RevysterHelper = {
           let tagPromise = promiseWrapMethods(TagsHandler)
               .createTag( userId, "Skabeloner");
           await Promise.all(
-            ["Sang.tex", "Sketch.tex"].map( async(name) => {
+            (["Sang.tex", "Sketch.tex"]).map( async(name) => {
               let project = await createSingleDocumentProject(name);
               let [tag] = await tagPromise;
               logger.log({tag: tag}, "Skabeloner tag");
