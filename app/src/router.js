@@ -454,12 +454,12 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
 
   webRouter.delete(
     '/Project/:Project_id',
-    AuthorizationMiddleware.ensureUserCanAdminProject,
+    AuthorizationMiddleware.ensureUserCanWriteProjectContent,
     ProjectController.deleteProject
   )
   webRouter.post(
     '/Project/:Project_id/restore',
-    AuthorizationMiddleware.ensureUserCanAdminProject,
+    AuthorizationMiddleware.ensureUserCanWriteProjectContent,
     ProjectController.restoreProject
   )
   webRouter.post(
@@ -470,7 +470,7 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
 
   webRouter.post(
     '/project/:Project_id/rename',
-    AuthorizationMiddleware.ensureUserCanAdminProject,
+    AuthorizationMiddleware.ensureUserCanWriteProjectContent,
     ProjectController.renameProject
   )
 
