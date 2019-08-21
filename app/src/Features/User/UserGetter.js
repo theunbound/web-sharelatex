@@ -19,6 +19,7 @@ const { db } = mongojs
 const { ObjectId } = mongojs
 const { getUserAffiliations } = require('../Institutions/InstitutionsAPI')
 const Errors = require('../Errors/Errors')
+const Features = require('../../infrastructure/Features')
 
 module.exports = UserGetter = {
   getUser(query, projection, callback) {
@@ -64,6 +65,10 @@ module.exports = UserGetter = {
       }
       if (!user) {
         return callback(new Error('User not Found'))
+      }
+
+      if (!Features.hasFeature('affiliations')) {
+        return callback(null, decorateFullEmails(user.email, user.emails, []))
       }
 
       return getUserAffiliations(userId, function(error, affiliationsData) {
@@ -132,6 +137,20 @@ module.exports = UserGetter = {
     })
   },
 
+  getUsersByV1Ids(v1Ids, projection, callback) {
+    if (callback == null) {
+      callback = function(error, user) {}
+    }
+    if (arguments.length === 2) {
+      callback = projection
+      projection = {}
+    }
+    const query = { 'overleaf.id': { $in: v1Ids } }
+    return db.users.find(query, projection, (error, users) => {
+      return callback(error, users)
+    })
+  },
+
   getUsersByHostname(hostname, projection, callback) {
     if (callback == null) {
       callback = function(error, users) {}
@@ -195,7 +214,7 @@ module.exports = UserGetter = {
   ensureUniqueEmailAddress(newEmail, callback) {
     return this.getUserByAnyEmail(newEmail, function(error, user) {
       if (user != null) {
-        return callback(new Errors.EmailExistsError('alread_exists'))
+        return callback(new Errors.EmailExistsError())
       }
       return callback(error)
     })

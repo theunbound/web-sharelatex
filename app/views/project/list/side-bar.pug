@@ -54,77 +54,77 @@
                a.menu-indent(href=item.url) #{translate(item.name)}
 
 .row-spaced(ng-if="projects.length > 0", ng-cloak)
-   ul.list-unstyled.folders-menu(
-      ng-controller="TagListController"
-   )
-      li(ng-class="{active: (filter == 'all')}", ng-click="filterProjects('all')")
-         a(href) #{translate("all_projects")}
-      li(ng-class="{active: (filter == 'owned')}", ng-click="filterProjects('owned')")
-         a(href) #{translate("your_projects")}
-      li(ng-class="{active: (filter == 'shared')}", ng-click="filterProjects('shared')")
-         a(href) #{translate("shared_with_you")}
-      li(ng-class="{active: (filter == 'archived')}", ng-click="filterProjects('archived')")
-         a(href) #{settings.overleaf ? translate("archived_projects") : translate("deleted_projects")}
-      if isShowingV1Projects
-         li(ng-class="{active: (filter == 'v1')}", ng-click="filterProjects('v1')")
-            a(href) #{translate("v1_projects")}
-      li.separator
-         h2 #{translate("tags_slash_folders")}
-      li.tag(ng-cloak)
-         a.tag-name(href, ng-click="openNewTagModal()")
-            i.fa.fa-fw.fa-plus(aria-hidden="true")
-            span.name #{translate("new_folder")}
-      li.tag(
-         ng-repeat="tag in tags | orderBy:'name'",
-         ng-class="{active: tag.selected}",
-         ng-cloak,
-         ng-click="selectTag(tag)"
-      )
-         a.tag-name(href)
-            i.icon.fa.fa-fw(
-               ng-class="{\
-                  'fa-folder-open': tag.selected,\
-                  'fa-folder': !tag.selected\
-               }"
-               ng-style="{ 'color': 'hsl({{ getHueForTagId(tag._id) }}, 70%, 45%)' }"
-               aria-hidden="true"
-            )
-            span.name {{tag.name}} 
-               span.subdued  ({{countProjectsForTag(tag)}})
-               span.v1-badge(
-                  ng-if="tag.isV1",
-                  ng-cloak,
-                  aria-label=translate("v1_badge")
-                  tooltip-template="'v1TagTooltipTemplate'"
-                  tooltip-append-to-body="true"
-               )
-         span.dropdown.tag-menu(dropdown ng-if="!tag.isV1")
-            a.dropdown-toggle(
-               href="#",
-               data-toggle="dropdown",
-               dropdown-toggle,
-               stop-propagation="click"
-            )
-               span.caret
-            ul.dropdown-menu.dropdown-menu-right(
-               role="menu"
-            )
-               li
-                  a(href, ng-click="renameTag(tag)", stop-propagation="click")
-                     | #{translate("rename")}
-               li
-                  a(href, ng-click="deleteTag(tag)", stop-propagation="click")
-                     | #{translate("delete")}
-      li.tag.untagged(
-         ng-if="tags.length",
-         ng-cloak,
-         ng-click="selectUntagged()"
-         ng-class="{active: filter === 'untagged'}",
-      )  
-         a.tag-name(href)
-            span.name
-               | #{translate("uncategorized")}
-            span.subdued  ({{ nUntagged }})
+	ul.list-unstyled.folders-menu(
+		ng-controller="TagListController"
+	)
+		li(ng-class="{active: (filter == 'all')}", ng-click="filterProjects('all')")
+			a(href) #{translate("all_projects")}
+		li(ng-class="{active: (filter == 'owned')}", ng-click="filterProjects('owned')")
+			a(href) #{translate("your_projects")}
+		li(ng-class="{active: (filter == 'shared')}", ng-click="filterProjects('shared')")
+			a(href) #{translate("shared_with_you")}
+		li(ng-class="{active: (filter == 'archived')}", ng-click="filterProjects('archived')")
+			a(href) #{settings.overleaf ? translate("archived_projects") : translate("deleted_projects")}
+		if isShowingV1Projects
+			li(ng-class="{active: (filter == 'v1')}", ng-click="filterProjects('v1')")
+				a(href) #{translate("v1_projects")}
+		li.separator
+			h2 #{translate("tags_slash_folders")}
+		li.tag(ng-cloak)
+			a.tag-name(href, ng-click="openNewTagModal()")
+				i.fa.fa-fw.fa-plus(aria-hidden="true")
+				span.name #{translate("new_folder")}
+		li.tag(
+			ng-repeat="tag in tags | orderBy:'name'",
+			ng-class="{active: tag.selected}",
+			ng-cloak,
+			ng-click="selectTag(tag)"
+		)
+			a.tag-name(href)
+				i.icon.fa.fa-fw(
+					ng-class="{\
+						'fa-folder-open': tag.selected,\
+						'fa-folder': !tag.selected\
+					}"
+					ng-style="{ 'color': 'hsl({{ getHueForTagId(tag._id) }}, 70%, 45%)' }"
+					aria-hidden="true"
+				)
+				span.name {{tag.name}} 
+					span.subdued  ({{countProjectsForTag(tag)}})
+					span.v1-badge(
+						ng-if="tag.isV1",
+						ng-cloak,
+						aria-label=translate("v1_badge")
+						tooltip-template="'v1TagTooltipTemplate'"
+						tooltip-append-to-body="true"
+					)
+			span.dropdown.tag-menu(dropdown)(ng-if="!tag.isV1")
+				a.dropdown-toggle(
+					href="#",
+					data-toggle="dropdown",
+					dropdown-toggle,
+					stop-propagation="click"
+				)
+					span.caret
+				ul.dropdown-menu.dropdown-menu-right(
+					role="menu"
+				)
+					li
+						a(href, ng-click="renameTag(tag)", stop-propagation="click")
+							| #{translate("rename")}
+					li
+						a(href, ng-click="deleteTag(tag)", stop-propagation="click")
+							| #{translate("delete")}
+		li.tag.untagged(
+			ng-if="tags.length",
+			ng-cloak,
+			ng-click="selectUntagged()"
+			ng-class="{active: filter === 'untagged'}",
+		) 	
+			a.tag-name(href)
+				span.name
+					| #{translate("uncategorized")}
+				span.subdued  ({{ nUntagged }})
 
 .row-spaced(ng-if="projects.length == 0", ng-cloak)
    .first-project

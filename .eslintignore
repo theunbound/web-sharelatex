@@ -1,7 +1,6 @@
+node_modules
 modules/**/scripts
 public/js
 public/minjs
 modules/**/public/js
 test/unit_frontend/js
-webpack.config.*
-karma.conf.js

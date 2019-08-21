@@ -24,6 +24,7 @@ const projectDuplicator = require('./ProjectDuplicator')
 const projectCreationHandler = require('./ProjectCreationHandler')
 const ProjectLocator = require('./ProjectLocator');
 const editorController = require('../Editor/EditorController')
+const ProjectHelper = require('./ProjectHelper')
 const metrics = require('metrics-sharelatex')
 const { User } = require('../../models/User')
 const TagsHandler = require('../Tags/TagsHandler')
@@ -321,8 +322,8 @@ module.exports = ProjectController = {
         if (err != null) {
           return next(err)
         }
-        projects = ProjectController._buildProjectList(projects)
-          .filter(p => !p.archived)
+        projects = ProjectController._buildProjectList(projects, user_id)
+          .filter(p => !ProjectHelper.isArchived(p, user_id))
           .filter(p => !p.isV1Project)
           .map(p => ({ _id: p.id, name: p.name, accessLevel: p.accessLevel }))
 
@@ -378,6 +379,10 @@ module.exports = ProjectController = {
           )
         },
         v1Projects(cb) {
+          if (!Features.hasFeature('overleaf-integration')) {
+            return cb(null, null)
+          }
+
           return Modules.hooks.fire('findAllV1Projects', user_id, function(
             error,
             projects
@@ -410,16 +415,10 @@ module.exports = ProjectController = {
           )
         },
         userAffiliations(cb) {
-          return getUserAffiliations(user_id, (error, result) => {
-            if (error != null && error.code === "ECONNREFUSED") {
-              logger.err(
-                error,
-                "userAffiliations: Connection refused. Returning empty result."
-              );
-              return cb(null, []);
-            }
-            return cb(error, result);
-          });
+          if (!Features.hasFeature('affiliations')) {
+            return cb(null, null)
+          }
+          return getUserAffiliations(user_id, cb)
         }
       },
       function(err, results) {
@@ -446,6 +445,7 @@ module.exports = ProjectController = {
         )
         const projects = ProjectController._buildProjectList(
           results.projects,
+          user_id,
           results.v1Projects != null ? results.v1Projects.projects : undefined
         )
         const { user } = results
@@ -461,10 +461,9 @@ module.exports = ProjectController = {
             user
           ) {
             if (req.ip !== user.lastLoginIp) {
-              return NotificationsBuilder.ipMatcherAffiliation(
-                user._id,
+              return NotificationsBuilder.ipMatcherAffiliation(user._id).create(
                 req.ip
-              ).create()
+              )
             }
           })
         }
@@ -762,7 +761,7 @@ module.exports = ProjectController = {
     )
   },
 
-  _buildProjectList(allProjects, v1Projects) {
+  _buildProjectList(allProjects, userId, v1Projects) {
     let project
     if (v1Projects == null) {
       v1Projects = []
@@ -780,7 +779,8 @@ module.exports = ProjectController = {
         ProjectController._buildProjectViewModel(
           project,
           'owner',
-          Sources.OWNER
+          Sources.OWNER,
+          userId
         )
       )
     }
@@ -790,7 +790,8 @@ module.exports = ProjectController = {
         ProjectController._buildProjectViewModel(
           project,
           'readWrite',
-          Sources.INVITE
+          Sources.INVITE,
+          userId
         )
       )
     }
@@ -799,7 +800,8 @@ module.exports = ProjectController = {
         ProjectController._buildProjectViewModel(
           project,
           'readOnly',
-          Sources.INVITE
+          Sources.INVITE,
+          userId
         )
       )
     }
@@ -818,7 +820,8 @@ module.exports = ProjectController = {
           ProjectController._buildProjectViewModel(
             project,
             'readAndWrite',
-            Sources.TOKEN
+            Sources.TOKEN,
+            userId
           )
         )
       }
@@ -832,7 +835,8 @@ module.exports = ProjectController = {
           ProjectController._buildProjectViewModel(
             project,
             'readOnly',
-            Sources.TOKEN
+            Sources.TOKEN,
+            userId
           )
         )
       }
@@ -841,7 +845,7 @@ module.exports = ProjectController = {
     return projects
   },
 
-  _buildProjectViewModel(project, accessLevel, source) {
+  _buildProjectViewModel(project, accessLevel, source, userId) {
     TokenAccessHandler.protectTokens(project, accessLevel)
     const model = {
       id: project._id,
@@ -851,7 +855,7 @@ module.exports = ProjectController = {
       publicAccessLevel: project.publicAccesLevel,
       accessLevel,
       source,
-      archived: !!project.archived,
+      archived: ProjectHelper.isArchived(project, userId),
       owner_ref: project.owner_ref,
       tokens: project.tokens,
       isV1Project: false
@@ -940,7 +944,7 @@ module.exports = ProjectController = {
       v1ProjectData = {}
     }
     const warnings = []
-    if (v1ProjectData.noConnection) {
+    if (v1ProjectData.noConnection && Settings.overleaf) {
       warnings.push('No V1 Connection')
     }
     if (v1ProjectData.hasHiddenV1Projects) {

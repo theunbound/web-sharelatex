@@ -14,7 +14,7 @@ const User = require('./helpers/User')
 const MockV1Api = require('./helpers/MockV1Api')
 
 describe('SettingsPage', function() {
-  before(function(done) {
+  beforeEach(function(done) {
     this.user = new User()
     this.v1Id = 1234
     this.v1User = {
@@ -42,7 +42,7 @@ describe('SettingsPage', function() {
   })
 
   it('load settings page', function(done) {
-    return this.user.getUserSettingsPage(function(err, statusCode) {
+    return this.user.getUserSettingsPage((err, statusCode) => {
       statusCode.should.equal(200)
       return done()
     })
@@ -52,7 +52,7 @@ describe('SettingsPage', function() {
     const newEmail = 'foo@bar.com'
     return this.user.updateSettings({ email: newEmail }, error => {
       should.not.exist(error)
-      return this.user.get(function(error, user) {
+      return this.user.get((error, user) => {
         user.email.should.equal(newEmail)
         user.emails.length.should.equal(1)
         user.emails[0].email.should.equal(newEmail)

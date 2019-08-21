@@ -98,7 +98,9 @@ describe('AuthenticationController', function() {
     this.next = sinon.stub()
   })
 
-  afterEach(() => tk.reset())
+  afterEach(function() {
+    return tk.reset()
+  })
 
   describe('isUserLoggedIn', function() {
     beforeEach(function() {
@@ -140,8 +142,9 @@ describe('AuthenticationController', function() {
         last_name: 'b',
         email: 'c'
       }
-      this.req.session.passport = { user: this.user }
-      return (this.req.session.user = this.user)
+      this.AuthenticationController.getSessionUser = sinon
+        .stub()
+        .returns(this.user)
     })
 
     it('should update the right properties', function() {
@@ -155,8 +158,8 @@ describe('AuthenticationController', function() {
         last_name: 'b',
         email: 'new_email'
       }
-      expect(this.req.session.passport.user).to.deep.equal(expectedUser)
-      return expect(this.req.session.user).to.deep.equal(expectedUser)
+      expect(this.user).to.deep.equal(expectedUser)
+      return expect(this.user).to.deep.equal(expectedUser)
     })
   })
 
@@ -1007,7 +1010,7 @@ describe('AuthenticationController', function() {
     })
   })
 
-  describe('_getSafeRedirectPath', () =>
+  describe('_getSafeRedirectPath', function() {
     it('sanitize redirect path to prevent open redirects', function() {
       expect(
         this.AuthenticationController._getSafeRedirectPath('https://evil.com')
@@ -1030,7 +1033,8 @@ describe('AuthenticationController', function() {
       return expect(
         this.AuthenticationController._getSafeRedirectPath('.evil.com')
       ).to.equal('/.evil.com')
-    }))
+    })
+  })
 
   describe('_clearRedirectFromSession', function() {
     beforeEach(function() {

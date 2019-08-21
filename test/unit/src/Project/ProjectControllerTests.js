@@ -79,6 +79,9 @@ describe('ProjectController', function() {
       findAllUsersProjects: sinon.stub(),
       getProject: sinon.stub()
     }
+    this.ProjectHelper = {
+      isArchived: sinon.stub()
+    }
     this.AuthenticationController = {
       getLoggedInUser: sinon.stub().callsArgWith(1, null, this.user),
       getLoggedInUserId: sinon.stub().returns(this.user._id),
@@ -136,6 +139,7 @@ describe('ProjectController', function() {
         './ProjectDuplicator': this.ProjectDuplicator,
         './ProjectCreationHandler': this.ProjectCreationHandler,
         '../Editor/EditorController': this.EditorController,
+        './ProjectHelper': this.ProjectHelper,
         '../Subscription/SubscriptionLocator': this.SubscriptionLocator,
         '../Subscription/LimitationsManager': this.LimitationsManager,
         '../Tags/TagsHandler': this.TagsHandler,
@@ -264,7 +268,7 @@ describe('ProjectController', function() {
     })
   })
 
-  describe('updateProjectAdminSettings', () =>
+  describe('updateProjectAdminSettings', function() {
     it('should update the public access level', function(done) {
       this.EditorController.setPublicAccessLevel = sinon.stub().callsArg(2)
       this.req.body = {
@@ -281,7 +285,8 @@ describe('ProjectController', function() {
         this.req,
         this.res
       )
-    }))
+    })
+  })
 
   describe('deleteProject', function() {
     it('should tell the project deleter to archive when forever=false', function(done) {
@@ -311,7 +316,7 @@ describe('ProjectController', function() {
     })
   })
 
-  describe('restoreProject', () =>
+  describe('restoreProject', function() {
     it('should tell the project deleter', function(done) {
       this.res.sendStatus = code => {
         this.ProjectDeleter.restoreProject
@@ -321,9 +326,10 @@ describe('ProjectController', function() {
         return done()
       }
       return this.ProjectController.restoreProject(this.req, this.res)
-    }))
+    })
+  })
 
-  describe('cloneProject', () =>
+  describe('cloneProject', function() {
     it('should call the project duplicator', function(done) {
       this.res.send = json => {
         this.ProjectDuplicator.duplicate
@@ -333,7 +339,8 @@ describe('ProjectController', function() {
         return done()
       }
       return this.ProjectController.cloneProject(this.req, this.res)
-    }))
+    })
+  })
 
   describe('newProject', function() {
     it('should call the projectCreationHandler with createExampleProject', function(done) {
@@ -546,6 +553,10 @@ describe('ProjectController', function() {
 
     describe('with overleaf-integration-web-module hook', function() {
       beforeEach(function() {
+        this.Features.hasFeature = sinon
+          .stub()
+          .withArgs('overleaf-integration')
+          .returns(true)
         this.V1Response = {
           projects: [
             {
@@ -580,7 +591,7 @@ describe('ProjectController', function() {
               this.tokenReadOnly.length +
               this.V1Response.projects.length
           )
-          opts.projects.forEach(function(p) {
+          opts.projects.forEach(p => {
             // Check properties correctly mapped from V1
             expect(p).to.have.property('id')
             expect(p).to.have.property('name')
@@ -598,7 +609,7 @@ describe('ProjectController', function() {
           opts.tags.length.should.equal(
             this.tags.length + this.V1Response.tags.length
           )
-          opts.tags.forEach(function(t) {
+          opts.tags.forEach(t => {
             expect(t).to.have.property('name')
             return expect(t).to.have.property('project_ids')
           })
@@ -894,13 +905,27 @@ describe('ProjectController', function() {
           somethingElse: 1
         }
       ]
+
+      this.ProjectHelper.isArchived
+        .withArgs(projects[0], this.user._id)
+        .returns(true)
+      this.ProjectHelper.isArchived
+        .withArgs(projects[1], this.user._id)
+        .returns(false)
+      this.ProjectHelper.isArchived
+        .withArgs(projects[2], this.user._id)
+        .returns(false)
+      this.ProjectHelper.isArchived
+        .withArgs(projects[3], this.user._id)
+        .returns(false)
+
       this.ProjectGetter.findAllUsersProjects = sinon
         .stub()
         .callsArgWith(2, null, [])
       this.ProjectController._buildProjectList = sinon.stub().returns(projects)
       this.AuthenticationController.getLoggedInUserId = sinon
         .stub()
-        .returns('abc')
+        .returns(this.user._id)
       return done()
     })
 

@@ -63,6 +63,9 @@ describe('UserGetter', function() {
         '../Institutions/InstitutionsAPI': {
           getUserAffiliations: this.getUserAffiliations
         },
+        '../../infrastructure/Features': {
+          hasFeature: sinon.stub().returns(true)
+        },
         '../Errors/Errors': Errors
       }
     }))
@@ -272,7 +275,7 @@ describe('UserGetter', function() {
     })
   })
 
-  describe('getUsersByHostname', () =>
+  describe('getUsersByHostname', function() {
     it('should find user by hostname', function(done) {
       const hostname = 'bar.foo'
       const expectedQuery = {
@@ -292,7 +295,27 @@ describe('UserGetter', function() {
           return done()
         }
       )
-    }))
+    })
+  })
+
+  describe('getUsersByV1Id', function() {
+    it('should find users by list of v1 ids', function(done) {
+      const v1Ids = [501]
+      const expectedQuery = {
+        'overleaf.id': { $in: v1Ids }
+      }
+      const projection = { emails: 1 }
+      return this.UserGetter.getUsersByV1Ids(
+        v1Ids,
+        projection,
+        (error, users) => {
+          this.find.calledOnce.should.equal(true)
+          this.find.calledWith(expectedQuery, projection).should.equal(true)
+          return done()
+        }
+      )
+    })
+  })
 
   describe('ensureUniqueEmailAddress', function() {
     beforeEach(function() {
@@ -304,7 +327,6 @@ describe('UserGetter', function() {
       return this.UserGetter.ensureUniqueEmailAddress(this.newEmail, err => {
         should.exist(err)
         expect(err).to.be.an.instanceof(Errors.EmailExistsError)
-        err.message.should.equal('alread_exists')
         return done()
       })
     })

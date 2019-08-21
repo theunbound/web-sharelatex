@@ -2,6 +2,9 @@ extends ../layout
 
 include ./dashboard/_team_name_mixin
 
+block scripts
+	script(src="https://js.recurly.com/v4/recurly.js")
+
 block content
 	.content.content-alt(ng-cloak)
 		.container
@@ -12,7 +15,7 @@ block content
 							p You already have a subscription
 					.card
 						.page-header
-							h1 #{translate("your_subscription")} 
+							h1 #{translate("your_subscription")}
 
 						-var hasDisplayedSubscription = false
 						-if (personalSubscription)

@@ -107,7 +107,7 @@ compile: $(DIST_FILES) css public/js/main.js public/js/ide.js
 compile_full:
 	$(BABEL) public/src --out-dir public/js
 	$(BABEL) test/unit_frontend/src --out-dir test/unit_frontend/js
-	rm -f public/js/ide.js public/js/main.js # We need to generate ide.js, main.js manually later
+	rm -f public/js/ide.js public/js/main.js # We need to generate ide.js, main.js, manually later
 	$(MAKE) css_full
 	$(MAKE) compile_modules_full
 	$(MAKE) compile # ide.js, main.js, share.js, and anything missed
