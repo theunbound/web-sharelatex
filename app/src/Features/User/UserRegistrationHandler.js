@@ -134,7 +134,7 @@ module.exports = UserRegistrationHandler = {
         const ONE_WEEK = 7 * 24 * 60 * 60 // seconds
         return OneTimeTokenHandler.getNewToken(
           'password',
-          user._id,
+          { user_id: user._id.toString(), email: email },
           { expiresIn: ONE_WEEK },
           function(err, token) {
             if (err != null) {

@@ -6,6 +6,7 @@ const UserGetter = require("../User/UserGetter");
 const UserRegistrationHandler = require("../User/UserRegistrationHandler");
 const fs = require("fs").promises;
 const path = require("path");
+const MAX_RETRIES = 10;
 let RevysterHelper;
 
 function promiseWrapMethods( callbackOwner ) {
@@ -24,7 +25,11 @@ function promiseWrapMethods( callbackOwner ) {
               else
                 resolve(results);
             });
-            target[prop].apply( target, args );
+            try {
+              target[prop].apply( target, args );
+            } catch (error) {
+              reject(error);
+            }
           });
         };
       }
@@ -100,6 +105,7 @@ module.exports = RevysterHelper = {
         bufferSide = otherSide;
       }
     })();
+    lookForAddresses.next();    // Gotta be primin'
 
     return new Promise( (resolve, reject) => {
       let req = https.request(options, function(res) {
@@ -124,9 +130,9 @@ module.exports = RevysterHelper = {
     });
   },
   
-  async initDb() {
+  async initDb( retryCount /*optional*/ ) {
     const parachute = Error("initDb parachute");
-    let userId = "";
+    let user = {};
     const createSingleDocumentProject = async(docName) => {
       // We look for docs in /app/templates/project_files
       const docPath = path.resolve(__dirname
@@ -136,7 +142,7 @@ module.exports = RevysterHelper = {
       let docLines = (async() =>
                       (await fs.readFile(docPath, 'utf8')).split('\n'))();
       let newProject = promiseWrapMethods( ProjectCreationHandler )
-          .createBlankProject(userId, docName.replace(".tex", ""));
+          .createBlankProject(user._id, docName.replace(".tex", ""));
       
       [docLines, [newProject]] = await Promise.all([docLines, newProject]);
       logger.log({
@@ -145,24 +151,27 @@ module.exports = RevysterHelper = {
         newProject: newProject
       }, "createSingleProjectDocument creating root doc.");
       await promiseWrapMethods(ProjectCreationHandler)
-        ._createRootDoc(newProject, userId, docLines, docName);
+        ._createRootDoc(newProject, user._id, docLines, docName);
       return newProject;
     };
 
     try {
       logger.log("Performing database initialisation for Revy-use.");
-      let [user] = await promiseWrapMethods( UserGetter )
+      [user] = await promiseWrapMethods( UserGetter )
           .getUser( {isAdmin: true}, {} );
       if (user == null) {
         logger.log(
-          "No admin user to own anything yet. Making kristoffer@levinhansen.dk an admin."
+          "No admin user to own anything yet. " +
+            "Making kristoffer@levinhansen.dk an admin."
         );
         [user] = await promiseWrapMethods( UserRegistrationHandler )
           .registerNewUserAndSendActivationEmail("kristoffer@levinhansen.dk");
         user.isAdmin = true;
         user.save();
+      } else {
+        logger.log(user, "Admin user selected for template ownership.");
       }
-      userId = user._id.toString();
+      let userId = user._id.toString();
       let [tags] = await promiseWrapMethods(TagsHandler).getAllTags(null);
       let tagNames = tags.map( tag => tag.name );
       logger.log({ tagNames: tagNames }, "Found tags.");
@@ -195,7 +204,7 @@ module.exports = RevysterHelper = {
           let tagPromise = promiseWrapMethods(TagsHandler)
               .createTag( userId, "Skabeloner");
           await Promise.all(
-            ["Sang.tex", "Sketch.tex"].map( async(name) => {
+            (["Sang.tex", "Sketch.tex"]).map( async(name) => {
               let project = await createSingleDocumentProject(name);
               let [tag] = await tagPromise;
               logger.log({tag: tag}, "Skabeloner tag");
@@ -217,7 +226,16 @@ module.exports = RevysterHelper = {
       await Promise.all(taskArray);
       
     } catch (error) {
-      if (error !== parachute) {
+      if (error.code && error.code == "ESOCKETTIMEOUT") {
+        let count = ( retryCount ) ? retryCount : 0;
+        if ( count < MAX_RETRIES ) RevysterHelper.initDB( count + 1 );
+        else logger.err( {error: error,
+                          stError: error.toString(),
+                          retries: count
+                         },
+                         "Still getting timeout after retries."
+                       );
+      } else if (error !== parachute) {
         logger.err({ error: error, stError: error.toString() },
                    "RevysterInitDb"
                   );

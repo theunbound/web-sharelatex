@@ -198,7 +198,7 @@ module.exports = AuthenticationManager = {
 
           // Globalize projects
           Project.updateMany(
-            { _id: { $ne: ObjectId( user_id.toString() )}},
+            { owner_ref: { $ne: ObjectId( user_id.toString() )}},
             {$addToSet: {collaberator_refs: ObjectId( user_id.toString() )}},
             ( error, doc ) => {
               if ( error != null ) return callback(error);
