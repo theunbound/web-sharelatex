@@ -278,53 +278,36 @@ const ProjectController = {
     const projectName =
       req.body.projectName != null ? req.body.projectName.trim() : undefined
     const { template } = req.body
-    logger.log(
-      { user: userId, projectType: template, name: projectName },
-      'creating project'
-    )
-    async.waterfall(
-      [
-        cb => {
-          if (template === 'example') {
-            ProjectCreationHandler.createExampleProject(userId, projectName, cb)
-          } else {
-            ProjectCreationHandler.createBasicProject(userId, projectName, cb)
-          }
-        }
-      ],
-      (err, project) => {
-        if (err != null) {
-          return next(err)
-        }
-        logger.log(
-          { project, userId, name: projectName, templateType: template },
-          'created project'
-        )
-        res.send({ project_id: project._id })
+    // TODO: This could follow the original more closely in style.
+    // That would probably make merging commits from upstream less painful.
+    function finalize(err, project) {
+      if (err != null) {
+        return next(err)
       }
       logger.log(
-        { project, user: user_id, name: projectName, templateType: template },
+        { project, userId, name: projectName, templateType: template },
         'created project'
       )
-      return res.send({ project_id: project._id })
+      res.send({ project_id: project._id })
     }
+    
     if (template.id != null) {
       logger.log(
-        { user: user_id, projectOriginalId: template.id, name: projectName },
+        { user: userId, projectOriginalId: template.id, name: projectName },
         "creating project by cloning"
       );
       res.setTimeout(5 * 60 * 1000); // allow extra time for the copy to complete
       async.waterfall([ function(cb) {
         return User.findById(
-          user_id, "first_name last_name", cb
+          userId, "first_name last_name", cb
         );
       }, function(user, cb) {
-        return projectDuplicator.duplicateWithTransforms(
+        return ProjectDuplicator.duplicateWithTransforms(
           AuthenticationController.getSessionUser(req),
           template.id, projectName,
           {
             docTransform: function(string) {
-              return projectCreationHandler._interpolateTemplate(
+              return ProjectCreationHandler._interpolateTemplate(
                 projectName, user, string
               );
             },
@@ -343,22 +326,20 @@ const ProjectController = {
             },
           cb
         );
-      }], finalise);
+      }], finalize);
     } else {
       logger.log(
-        { user: user_id, projectType: template, name: projectName },
+        { user: userId, projectType: template, name: projectName },
         "creating project from template"
       );
       if (template === 'example') {
-        return projectCreationHandler.createExampleProject(
-          user_id, projectName, finalise
-        );
+        ProjectCreationHandler.createExampleProject(userId, projectName, finalize)
       } else {
-        return projectCreationHandler.createBasicProject(
-          user_id, projectName, ( (template != null) && template !== "none" )
-            ? template
-            : 'mainbasic',
-          finalise
+        ProjectCreationHandler.createBasicProject(
+          userId,
+          projectName,
+          ( (template != null) && template !== "none" ) ? template : 'mainbasic',
+          finalize
         );
       }
     }
