@@ -127,7 +127,9 @@ module.exports = SubscriptionController = {
                     }),
                     showCouponField: req.query.scf,
                     showVatField: req.query.svf,
-                    couponCode: req.query.cc || ''
+                    couponCode: req.query.cc || '',
+                    ITMCampaign: req.query.itm_campaign,
+                    ITMContent: req.query.itm_content
                   })
                 }
               )
@@ -355,20 +357,26 @@ module.exports = SubscriptionController = {
   recurlyCallback(req, res, next) {
     logger.log({ data: req.body }, 'received recurly callback')
     // we only care if a subscription has exipired
+    const event = Object.keys(req.body)[0]
+    const eventData = req.body[event]
     if (
-      req.body != null &&
-      req.body['expired_subscription_notification'] != null
+      [
+        'new_subscription_notification',
+        'updated_subscription_notification',
+        'expired_subscription_notification'
+      ].includes(event)
     ) {
-      const recurlySubscription =
-        req.body['expired_subscription_notification'].subscription
-      return SubscriptionHandler.recurlyCallback(recurlySubscription, function(
-        err
-      ) {
-        if (err != null) {
-          return next(err)
+      const recurlySubscription = eventData.subscription
+      return SubscriptionHandler.recurlyCallback(
+        recurlySubscription,
+        { ip: req.ip },
+        function(err) {
+          if (err != null) {
+            return next(err)
+          }
+          return res.sendStatus(200)
         }
-        return res.sendStatus(200)
-      })
+      )
     } else {
       return res.sendStatus(200)
     }

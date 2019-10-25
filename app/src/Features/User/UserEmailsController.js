@@ -1,18 +1,7 @@
-/* eslint-disable
-    handle-callback-err,
-    max-len,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS102: Remove unnecessary code created because of implicit returns
- * DS103: Rewrite code to no longer use __guard__
- * DS207: Consider shorter variations of null checks
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
 let UserEmailsController
 const AuthenticationController = require('../Authentication/AuthenticationController')
+const Features = require('../../infrastructure/Features')
+const InstitutionsAPI = require('../Institutions/InstitutionsAPI')
 const UserGetter = require('./UserGetter')
 const UserUpdater = require('./UserUpdater')
 const EmailHelper = require('../Helpers/EmailHelper')
@@ -22,70 +11,113 @@ const logger = require('logger-sharelatex')
 const Errors = require('../Errors/Errors')
 const HttpErrors = require('@overleaf/o-error/http')
 
+function add(req, res, next) {
+  const userId = AuthenticationController.getLoggedInUserId(req)
+  const email = EmailHelper.parseEmail(req.body.email)
+  if (!email) {
+    return res.sendStatus(422)
+  }
+
+  const affiliationOptions = {
+    university: req.body.university,
+    role: req.body.role,
+    department: req.body.department
+  }
+  UserUpdater.addEmailAddress(userId, email, affiliationOptions, function(
+    error
+  ) {
+    if (error) {
+      return UserEmailsController._handleEmailError(error, req, res, next)
+    }
+    UserEmailsConfirmationHandler.sendConfirmationEmail(userId, email, function(
+      error
+    ) {
+      if (error) {
+        return next(error)
+      }
+      res.sendStatus(204)
+    })
+  })
+}
+
+async function resendConfirmation(req, res, next) {
+  const userId = AuthenticationController.getLoggedInUserId(req)
+  const email = EmailHelper.parseEmail(req.body.email)
+  if (!email) {
+    return res.sendStatus(422)
+  }
+  UserGetter.getUserByAnyEmail(email, { _id: 1 }, async function(error, user) {
+    if (error) {
+      return next(error)
+    }
+    if (!user || user._id.toString() !== userId) {
+      logger.log(
+        { userId, email, foundUserId: user && user._id },
+        "email doesn't match logged in user"
+      )
+      return res.sendStatus(422)
+    }
+    if (Features.hasFeature('saml') || req.session.samlBeta) {
+      // institution SSO emails cannot be confirmed by email,
+      // confirmation happens by linking to the institution
+      let institution
+      try {
+        institution = await InstitutionsAPI.getInstitutionViaDomain(
+          email.split('@').pop()
+        )
+      } catch (error) {
+        if (!(error instanceof Errors.NotFoundError)) {
+          throw error
+        }
+      }
+      if (institution && institution.sso_enabled) {
+        return res.sendStatus(422)
+      }
+    }
+    logger.log({ userId, email }, 'resending email confirmation token')
+    UserEmailsConfirmationHandler.sendConfirmationEmail(userId, email, function(
+      error
+    ) {
+      if (error) {
+        return next(error)
+      }
+      res.sendStatus(200)
+    })
+  })
+}
+
 module.exports = UserEmailsController = {
   list(req, res, next) {
     const userId = AuthenticationController.getLoggedInUserId(req)
-    return UserGetter.getUserFullEmails(userId, function(error, fullEmails) {
-      if (error != null) {
+    UserGetter.getUserFullEmails(userId, function(error, fullEmails) {
+      if (error) {
         return next(error)
       }
-      return res.json(fullEmails)
+      res.json(fullEmails)
     })
   },
 
-  add(req, res, next) {
-    const userId = AuthenticationController.getLoggedInUserId(req)
-    const email = EmailHelper.parseEmail(req.body.email)
-    if (email == null) {
-      return res.sendStatus(422)
-    }
-
-    const affiliationOptions = {
-      university: req.body.university,
-      role: req.body.role,
-      department: req.body.department
-    }
-    return UserUpdater.addEmailAddress(
-      userId,
-      email,
-      affiliationOptions,
-      function(error) {
-        if (error != null) {
-          return UserEmailsController._handleEmailError(error, req, res, next)
-        }
-        return UserEmailsConfirmationHandler.sendConfirmationEmail(
-          userId,
-          email,
-          function(err) {
-            if (error != null) {
-              return next(error)
-            }
-            return res.sendStatus(204)
-          }
-        )
-      }
-    )
-  },
+  add,
 
   remove(req, res, next) {
     const userId = AuthenticationController.getLoggedInUserId(req)
     const email = EmailHelper.parseEmail(req.body.email)
-    if (email == null) {
+    if (!email) {
       return res.sendStatus(422)
     }
 
-    return UserUpdater.removeEmailAddress(userId, email, function(error) {
-      if (error != null) {
+    UserUpdater.removeEmailAddress(userId, email, function(error) {
+      if (error) {
         return next(error)
       }
-      return res.sendStatus(200)
+      res.sendStatus(200)
     })
   },
 
   setDefault(req, res, next) {
     const userId = AuthenticationController.getLoggedInUserId(req)
     const email = EmailHelper.parseEmail(req.body.email)
-    if (email == null) {
+    if (!email) {
       return res.sendStatus(422)
     }
     UserUpdater.setDefaultEmailAddress(userId, email, err => {
@@ -100,64 +132,28 @@ module.exports = UserEmailsController = {
   endorse(req, res, next) {
     const userId = AuthenticationController.getLoggedInUserId(req)
     const email = EmailHelper.parseEmail(req.body.email)
-    if (email == null) {
+    if (!email) {
       return res.sendStatus(422)
     }
 
-    return endorseAffiliation(
+    endorseAffiliation(
       userId,
       email,
       req.body.role,
       req.body.department,
       function(error) {
-        if (error != null) {
+        if (error) {
           return next(error)
         }
-        return res.sendStatus(204)
+        res.sendStatus(204)
       }
     )
   },
 
-  resendConfirmation(req, res, next) {
-    const userId = AuthenticationController.getLoggedInUserId(req)
-    const email = EmailHelper.parseEmail(req.body.email)
-    if (email == null) {
-      return res.sendStatus(422)
-    }
-    return UserGetter.getUserByAnyEmail(email, { _id: 1 }, function(
-      error,
-      user
-    ) {
-      if (error != null) {
-        return next(error)
-      }
-      if (
-        user == null ||
-        __guard__(user != null ? user._id : undefined, x => x.toString()) !==
-          userId
-      ) {
-        logger.log(
-          { userId, email, foundUserId: user != null ? user._id : undefined },
-          "email doesn't match logged in user"
-        )
-        return res.sendStatus(422)
-      }
-      logger.log({ userId, email }, 'resending email confirmation token')
-      return UserEmailsConfirmationHandler.sendConfirmationEmail(
-        userId,
-        email,
-        function(error) {
-          if (error != null) {
-            return next(error)
-          }
-          return res.sendStatus(200)
-        }
-      )
-    })
-  },
+  resendConfirmation,
 
   showConfirm(req, res, next) {
-    return res.render('user/confirm_email', {
+    res.render('user/confirm_email', {
       token: req.query.token,
       title: 'confirm_email'
     })
@@ -165,23 +161,21 @@ module.exports = UserEmailsController = {
 
   confirm(req, res, next) {
     const { token } = req.body
-    if (token == null) {
+    if (!token) {
       return res.sendStatus(422)
     }
-    return UserEmailsConfirmationHandler.confirmEmailFromToken(token, function(
-      error
-    ) {
-      if (error != null) {
+    UserEmailsConfirmationHandler.confirmEmailFromToken(token, function(error) {
+      if (error) {
         if (error instanceof Errors.NotFoundError) {
-          return res.status(404).json({
+          res.status(404).json({
             message:
               'Sorry, your confirmation token is invalid or has expired. Please request a new email confirmation link.'
           })
         } else {
-          return next(error)
+          next(error)
         }
       } else {
-        return res.sendStatus(200)
+        res.sendStatus(200)
       }
     })
   },
@@ -206,9 +200,4 @@ module.exports = UserEmailsController = {
     }
     next(new HttpErrors.InternalServerError().withCause(error))
   }
-}
-function __guard__(value, transform) {
-  return typeof value !== 'undefined' && value !== null
-    ? transform(value)
-    : undefined
 }

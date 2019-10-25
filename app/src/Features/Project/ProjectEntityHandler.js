@@ -14,7 +14,6 @@
  * DS207: Consider shorter variations of null checks
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
-let ProjectEntityHandler, self
 const _ = require('underscore')
 const async = require('async')
 const path = require('path')
@@ -25,8 +24,9 @@ const Errors = require('../Errors/Errors')
 const { Project } = require('../../models/Project')
 const ProjectGetter = require('./ProjectGetter')
 const TpdsUpdateSender = require('../ThirdPartyDataStore/TpdsUpdateSender')
+const { promisifyAll } = require('../../util/promises')
 
-module.exports = ProjectEntityHandler = self = {
+const ProjectEntityHandler = {
   getAllDocs(project_id, callback) {
     logger.log({ project_id }, 'getting all docs for project')
 
@@ -46,7 +46,10 @@ module.exports = ProjectEntityHandler = self = {
         docContents[docContent._id] = docContent
       }
 
-      return self._getAllFolders(project_id, function(error, folders) {
+      return ProjectEntityHandler._getAllFolders(project_id, function(
+        error,
+        folders
+      ) {
         if (folders == null) {
           folders = {}
         }
@@ -79,7 +82,10 @@ module.exports = ProjectEntityHandler = self = {
 
   getAllFiles(project_id, callback) {
     logger.log({ project_id }, 'getting all files for project')
-    return self._getAllFolders(project_id, function(err, folders) {
+    return ProjectEntityHandler._getAllFolders(project_id, function(
+      err,
+      folders
+    ) {
       if (folders == null) {
         folders = {}
       }
@@ -104,13 +110,20 @@ module.exports = ProjectEntityHandler = self = {
       if (err != null) {
         return callback(err)
       }
-      return self.getAllEntitiesFromProject(project, callback)
+      if (project == null) {
+        return callback(new Errors.NotFoundError('project not found'))
+      }
+
+      return ProjectEntityHandler.getAllEntitiesFromProject(project, callback)
     })
   },
 
   getAllEntitiesFromProject(project, callback) {
     logger.log({ project }, 'getting all entities for project')
-    return self._getAllFoldersFromProject(project, function(err, folders) {
+    return ProjectEntityHandler._getAllFoldersFromProject(project, function(
+      err,
+      folders
+    ) {
       if (folders == null) {
         folders = {}
       }
@@ -147,13 +160,16 @@ module.exports = ProjectEntityHandler = self = {
       if (project == null) {
         return callback(Errors.NotFoundError('no project'))
       }
-      return self.getAllDocPathsFromProject(project, callback)
+      return ProjectEntityHandler.getAllDocPathsFromProject(project, callback)
     })
   },
 
   getAllDocPathsFromProject(project, callback) {
     logger.log({ project }, 'getting all docs for project')
-    return self._getAllFoldersFromProject(project, function(err, folders) {
+    return ProjectEntityHandler._getAllFoldersFromProject(project, function(
+      err,
+      folders
+    ) {
       if (folders == null) {
         folders = {}
       }
@@ -191,7 +207,10 @@ module.exports = ProjectEntityHandler = self = {
           return callback(error)
         }
         const requests = []
-        return self.getAllDocs(project_id, function(error, docs) {
+        return ProjectEntityHandler.getAllDocs(project_id, function(
+          error,
+          docs
+        ) {
           if (error != null) {
             return callback(error)
           }
@@ -211,7 +230,10 @@ module.exports = ProjectEntityHandler = self = {
                 )
               ))(docPath, doc)
           }
-          return self.getAllFiles(project_id, function(error, files) {
+          return ProjectEntityHandler.getAllFiles(project_id, function(
+            error,
+            files
+          ) {
             if (error != null) {
               return callback(error)
             }
@@ -256,6 +278,51 @@ module.exports = ProjectEntityHandler = self = {
     return DocstoreManager.getDoc(project_id, doc_id, options, callback)
   },
 
+  getDocPathByProjectIdAndDocId(project_id, doc_id, callback) {
+    logger.log({ project_id, doc_id }, 'getting path for doc and project')
+    return ProjectGetter.getProjectWithoutDocLines(project_id, function(
+      err,
+      project
+    ) {
+      if (err != null) {
+        return callback(err)
+      }
+      if (project == null) {
+        return callback(new Errors.NotFoundError('no project'))
+      }
+      function recursivelyFindDocInFolder(basePath, doc_id, folder) {
+        let docInCurrentFolder = Array.from(folder.docs || []).find(
+          currentDoc => currentDoc._id.toString() === doc_id.toString()
+        )
+        if (docInCurrentFolder != null) {
+          return path.join(basePath, docInCurrentFolder.name)
+        } else {
+          let docPath, childFolder
+          for (childFolder of Array.from(folder.folders || [])) {
+            docPath = recursivelyFindDocInFolder(
+              path.join(basePath, childFolder.name),
+              doc_id,
+              childFolder
+            )
+            if (docPath != null) {
+              return docPath
+            }
+          }
+          return null
+        }
+      }
+      const docPath = recursivelyFindDocInFolder(
+        '/',
+        doc_id,
+        project.rootFolder[0]
+      )
+      if (docPath == null) {
+        return callback(new Errors.NotFoundError('no doc'))
+      }
+      return callback(null, docPath)
+    })
+  },
+
   _getAllFolders(project_id, callback) {
     logger.log({ project_id }, 'getting all folders for project')
     return ProjectGetter.getProjectWithoutDocLines(project_id, function(
@@ -266,9 +333,9 @@ module.exports = ProjectEntityHandler = self = {
         return callback(err)
       }
       if (project == null) {
-        return callback(Errors.NotFoundError('no project'))
+        return callback(new Errors.NotFoundError('no project'))
       }
-      return self._getAllFoldersFromProject(project, callback)
+      return ProjectEntityHandler._getAllFoldersFromProject(project, callback)
     })
   },
 
@@ -295,3 +362,6 @@ module.exports = ProjectEntityHandler = self = {
     return callback(null, folders)
   }
 }
+
+ProjectEntityHandler.promises = promisifyAll(ProjectEntityHandler)
+module.exports = ProjectEntityHandler

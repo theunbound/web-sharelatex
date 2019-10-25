@@ -1,87 +1,124 @@
-const async = require('async')
+const OError = require('@overleaf/o-error')
+const HttpErrors = require('@overleaf/o-error/http')
+const { ObjectId } = require('mongodb')
 const CollaboratorsHandler = require('./CollaboratorsHandler')
+const CollaboratorsGetter = require('./CollaboratorsGetter')
+const OwnershipTransferHandler = require('./OwnershipTransferHandler')
 const AuthenticationController = require('../Authentication/AuthenticationController')
 const EditorRealTimeController = require('../Editor/EditorRealTimeController')
 const TagsHandler = require('../Tags/TagsHandler')
+const Errors = require('../Errors/Errors')
 const logger = require('logger-sharelatex')
+const { expressify } = require('../../util/promises')
 
-const CollaboratorsController = {
-  removeUserFromProject(req, res, next) {
+module.exports = {
+  removeUserFromProject: expressify(removeUserFromProject),
+  removeSelfFromProject: expressify(removeSelfFromProject),
+  getAllMembers: expressify(getAllMembers),
+  setCollaboratorInfo: expressify(setCollaboratorInfo),
+  transferOwnership: expressify(transferOwnership)
+}
+
+async function removeUserFromProject(req, res, next) {
+  const projectId = req.params.Project_id
+  const userId = req.params.user_id
+  await _removeUserIdFromProject(projectId, userId)
+  EditorRealTimeController.emitToRoom(projectId, 'project:membership:changed', {
+    members: true
+  })
+  res.sendStatus(204)
+}
+
+async function removeSelfFromProject(req, res, next) {
+  const projectId = req.params.Project_id
+  const userId = AuthenticationController.getLoggedInUserId(req)
+  await _removeUserIdFromProject(projectId, userId)
+  res.sendStatus(204)
+}
+
+async function getAllMembers(req, res, next) {
+  const projectId = req.params.Project_id
+  logger.log({ projectId }, 'getting all active members for project')
+  let members
+  try {
+    members = await CollaboratorsGetter.promises.getAllInvitedMembers(projectId)
+  } catch (err) {
+    throw new OError({
+      message: 'error getting members for project',
+      info: { projectId }
+    }).withCause(err)
+  }
+  res.json({ members })
+}
+
+async function setCollaboratorInfo(req, res, next) {
+  try {
     const projectId = req.params.Project_id
     const userId = req.params.user_id
-    CollaboratorsController._removeUserIdFromProject(
+    const { privilegeLevel } = req.body
+    await CollaboratorsHandler.promises.setCollaboratorPrivilegeLevel(
       projectId,
       userId,
-      function(error) {
-        if (error) {
-          return next(error)
-        }
-        EditorRealTimeController.emitToRoom(
-          projectId,
-          'project:membership:changed',
-          { members: true }
-        )
-        res.sendStatus(204)
-      }
+      privilegeLevel
     )
-  },
-
-  removeSelfFromProject(req, res, next) {
-    const projectId = req.params.Project_id
-    const userId = AuthenticationController.getLoggedInUserId(req)
-    CollaboratorsController._removeUserIdFromProject(
+    EditorRealTimeController.emitToRoom(
       projectId,
-      userId,
-      function(error) {
-        if (error) {
-          return next(error)
-        }
-        res.sendStatus(204)
-      }
+      'project:membership:changed',
+      { members: true }
     )
-  },
-
-  _removeUserIdFromProject(projectId, userId, callback) {
-    async.series(
-      [
-        cb => {
-          CollaboratorsHandler.removeUserFromProject(projectId, userId, cb)
-        },
-        cb => {
-          EditorRealTimeController.emitToRoom(
-            projectId,
-            'userRemovedFromProject',
-            userId
-          )
-          cb()
-        },
-        cb => {
-          TagsHandler.removeProjectFromAllTags(userId, projectId, cb)
-        }
-      ],
-      function(error) {
-        if (error) {
-          return callback(error)
-        }
-        callback()
-      }
-    )
-  },
-
-  getAllMembers(req, res, next) {
-    const projectId = req.params.Project_id
-    logger.log({ projectId }, 'getting all active members for project')
-    CollaboratorsHandler.getAllInvitedMembers(projectId, function(
-      err,
-      members
-    ) {
-      if (err) {
-        logger.warn({ projectId }, 'error getting members for project')
-        return next(err)
-      }
-      res.json({ members })
-    })
+    res.sendStatus(204)
+  } catch (err) {
+    if (err instanceof Errors.NotFoundError) {
+      throw new HttpErrors.NotFoundError({})
+    } else {
+      throw new HttpErrors.InternalServerError({}).withCause(err)
+    }
   }
 }
 
-module.exports = CollaboratorsController
+async function transferOwnership(req, res, next) {
+  const sessionUser = AuthenticationController.getSessionUser(req)
+  const projectId = req.params.Project_id
+  const toUserId = req.body.user_id
+  try {
+    await OwnershipTransferHandler.promises.transferOwnership(
+      projectId,
+      toUserId,
+      {
+        allowTransferToNonCollaborators: sessionUser.isAdmin,
+        sessionUserId: ObjectId(sessionUser._id)
+      }
+    )
+    res.sendStatus(204)
+  } catch (err) {
+    if (err instanceof Errors.ProjectNotFoundError) {
+      throw new HttpErrors.NotFoundError({
+        info: { public: { message: `project not found: ${projectId}` } }
+      })
+    } else if (err instanceof Errors.UserNotFoundError) {
+      throw new HttpErrors.NotFoundError({
+        info: { public: { message: `user not found: ${toUserId}` } }
+      })
+    } else if (err instanceof Errors.UserNotCollaboratorError) {
+      throw new HttpErrors.ForbiddenError({
+        info: {
+          public: {
+            message: `user ${toUserId} should be a collaborator in project ${projectId} prior to ownership transfer`
+          }
+        }
+      })
+    } else {
+      throw new HttpErrors.InternalServerError({}).withCause(err)
+    }
+  }
+}
+
+async function _removeUserIdFromProject(projectId, userId) {
+  await CollaboratorsHandler.promises.removeUserFromProject(projectId, userId)
+  EditorRealTimeController.emitToRoom(
+    projectId,
+    'userRemovedFromProject',
+    userId
+  )
+  await TagsHandler.promises.removeProjectFromAllTags(userId, projectId)
+}

@@ -2,7 +2,6 @@
     camelcase,
     max-len
 */
-/* global define,history */
 define(['base'], function(App) {
   App.factory('MultiCurrencyPricing', function() {
     const currencyCode = window.recomendedCurrency
@@ -192,7 +191,7 @@ define(['base'], function(App) {
   App.controller('PlansController', function(
     $scope,
     $modal,
-    event_tracking,
+    eventTracking,
     MultiCurrencyPricing,
     $http,
     $filter,
@@ -232,8 +231,8 @@ define(['base'], function(App) {
         plan = `${plan}_annual`
       }
       plan = eventLabel(plan, location)
-      event_tracking.sendMB('plans-page-start-trial')
-      event_tracking.send('subscription-funnel', 'sign_up_now_button', plan)
+      eventTracking.sendMB('plans-page-start-trial')
+      eventTracking.send('subscription-funnel', 'sign_up_now_button', plan)
     }
 
     $scope.switchToMonthly = function(e, location) {
@@ -265,7 +264,7 @@ define(['base'], function(App) {
         .result.finally(() =>
           history.replaceState(null, document.title, window.location.pathname)
         )
-      event_tracking.send(
+      eventTracking.send(
         'subscription-funnel',
         'plans-page',
         'group-inquiry-potential'
@@ -275,12 +274,32 @@ define(['base'], function(App) {
       $scope.openGroupPlanModal()
     }
 
+    $scope.openPayByInvoiceModal = function() {
+      const path = `${window.location.pathname}${window.location.search}`
+      history.replaceState(null, document.title, path + '#pay-by-invoice')
+      $modal
+        .open({
+          templateUrl: 'groupPlanModalInquiryTemplate'
+        })
+        .result.finally(() =>
+          history.replaceState(null, document.title, window.location.pathname)
+        )
+      eventTracking.send(
+        'subscription-funnel',
+        'plans-page',
+        'group-inquiry-potential'
+      )
+    }
+    if ($location.hash() === 'pay-by-invoice') {
+      $scope.openPayByInvoiceModal()
+    }
+
     var eventLabel = (label, location) => label
 
     switchEvent = function(e, label, location) {
       e.preventDefault()
       const gaLabel = eventLabel(label, location)
-      event_tracking.send('subscription-funnel', 'plans-page', gaLabel)
+      eventTracking.send('subscription-funnel', 'plans-page', gaLabel)
     }
   })
 

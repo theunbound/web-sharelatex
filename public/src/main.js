@@ -30,6 +30,7 @@ define([
   'main/subscription/team-invite-controller',
   'main/contact-us',
   'main/learn',
+  'main/exposed-settings',
   'main/affiliations/components/affiliationForm',
   'main/affiliations/controllers/UserAffiliationsController',
   'main/affiliations/factories/UserAffiliationsDataService',
@@ -55,7 +56,7 @@ define([
   'services/validateCaptchaV3',
   'filters/formatDate',
   'components/inputSuggestions',
-  '__MAIN_CLIENTSIDE_INCLUDES__'
+  '../../modules/modules-main.js'
 ], function() {
   angular.module('SharelatexApp').config(function($locationProvider) {
     try {

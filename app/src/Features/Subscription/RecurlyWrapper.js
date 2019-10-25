@@ -250,6 +250,12 @@ module.exports = RecurlyWrapper = {
           account_code: user._id
         }
       }
+      const customFields = getCustomFieldsFromSubscriptionDetails(
+        subscriptionDetails
+      )
+      if (customFields) {
+        data.custom_fields = customFields
+      }
       const requestBody = RecurlyWrapper._buildXml('subscription', data)
 
       return RecurlyWrapper.apiRequest(
@@ -355,6 +361,12 @@ module.exports = RecurlyWrapper = {
     if (recurlyTokenIds.threeDSecureActionResult) {
       data.account.billing_info.three_d_secure_action_result_token_id =
         recurlyTokenIds.threeDSecureActionResult
+    }
+    const customFields = getCustomFieldsFromSubscriptionDetails(
+      subscriptionDetails
+    )
+    if (customFields) {
+      data.custom_fields = customFields
     }
     const requestBody = RecurlyWrapper._buildXml('subscription', data)
 
@@ -517,14 +529,13 @@ module.exports = RecurlyWrapper = {
     )
   },
 
-  getAccounts(callback) {
+  getAccounts(queryParams, callback) {
+    queryParams.per_page = queryParams.per_page || 200
     let allAccounts = []
     var getPageOfAccounts = (cursor = null) => {
       const opts = {
         url: 'accounts',
-        qs: {
-          per_page: 200
-        }
+        qs: queryParams
       }
       if (cursor != null) {
         opts.qs.cursor = cursor
@@ -546,11 +557,12 @@ module.exports = RecurlyWrapper = {
           )
           cursor = __guard__(
             response.headers.link != null
-              ? response.headers.link.match(/cursor=([0-9]+)&/)
+              ? response.headers.link.match(/cursor=([0-9]+%3A[0-9]+)&/)
               : undefined,
             x1 => x1[1]
           )
           if (cursor != null) {
+            cursor = decodeURIComponent(cursor)
             return getPageOfAccounts(cursor)
           } else {
             return callback(err, allAccounts)
@@ -994,6 +1006,26 @@ module.exports = RecurlyWrapper = {
     const builder = new xml2js.Builder(options)
     return builder.buildObject(data)
   }
+}
+
+function getCustomFieldsFromSubscriptionDetails(subscriptionDetails) {
+  if (!subscriptionDetails.ITMCampaign) {
+    return null
+  }
+
+  const customFields = [
+    {
+      name: 'itm_campaign',
+      value: subscriptionDetails.ITMCampaign
+    }
+  ]
+  if (subscriptionDetails.ITMContent) {
+    customFields.push({
+      name: 'itm_content',
+      value: subscriptionDetails.ITMContent
+    })
+  }
+  return { custom_field: customFields }
 }
 
 function __guard__(value, transform) {

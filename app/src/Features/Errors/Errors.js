@@ -54,6 +54,35 @@ class NotInV2Error extends BackwardCompatibleError {}
 
 class SLInV2Error extends BackwardCompatibleError {}
 
+class SAMLIdentityExistsError extends BackwardCompatibleError {
+  constructor(arg) {
+    super(arg)
+    if (!this.message) {
+      this.message =
+        'provider and external id already linked to another account'
+    }
+  }
+}
+
+class SAMLSessionDataMissing extends BackwardCompatibleError {
+  constructor(arg) {
+    super(arg)
+    if (!this.message) {
+      this.message =
+        'Please resubmit your institutional email.<br/><a href="/institutional-login">institutional login</a>'
+    }
+  }
+}
+
+class SAMLUserNotFoundError extends BackwardCompatibleError {
+  constructor(arg) {
+    super(arg)
+    if (!this.message) {
+      this.message = 'user not found for SAML provider and external id'
+    }
+  }
+}
+
 class ThirdPartyIdentityExistsError extends BackwardCompatibleError {
   constructor(arg) {
     super(arg)
@@ -82,6 +111,33 @@ class SubscriptionAdminDeletionError extends OError {
   }
 }
 
+class ProjectNotFoundError extends OError {
+  constructor(options) {
+    super({
+      message: 'project not found',
+      ...options
+    })
+  }
+}
+
+class UserNotFoundError extends OError {
+  constructor(options) {
+    super({
+      message: 'user not found',
+      ...options
+    })
+  }
+}
+
+class UserNotCollaboratorError extends OError {
+  constructor(options) {
+    super({
+      message: 'user not a collaborator',
+      ...options
+    })
+  }
+}
+
 module.exports = {
   OError,
   BackwardCompatibleError,
@@ -99,8 +155,14 @@ module.exports = {
   EmailExistsError,
   InvalidError,
   NotInV2Error,
+  SAMLIdentityExistsError,
+  SAMLSessionDataMissing,
+  SAMLUserNotFoundError,
   SLInV2Error,
   ThirdPartyIdentityExistsError,
   ThirdPartyUserNotFoundError,
-  SubscriptionAdminDeletionError
+  SubscriptionAdminDeletionError,
+  ProjectNotFoundError,
+  UserNotFoundError,
+  UserNotCollaboratorError
 }

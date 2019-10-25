@@ -5,6 +5,7 @@ const logger = require('logger-sharelatex')
 const metrics = require('metrics-sharelatex')
 const crawlerLogger = require('./CrawlerLogger')
 const expressLocals = require('./ExpressLocals')
+const Validation = require('./Validation')
 const Router = require('../router')
 const helmet = require('helmet')
 const UserSessionsRedis = require('../Features/User/UserSessionsRedis')
@@ -12,6 +13,7 @@ const Csrf = require('./Csrf')
 
 const sessionsRedisClient = UserSessionsRedis.client()
 
+const SessionStoreManager = require('./SessionStoreManager')
 const session = require('express-session')
 const RedisStore = require('connect-redis')(session)
 const bodyParser = require('body-parser')
@@ -40,10 +42,6 @@ const STATIC_CACHE_AGE = Settings.cacheStaticAssets
 
 // Init the session store
 const sessionStore = new RedisStore({ client: sessionsRedisClient })
-
-if (metrics.event_loop != null) {
-  metrics.event_loop.monitor(logger)
-}
 
 const app = express()
 
@@ -105,7 +103,7 @@ webRouter.use(
     proxy: Settings.behindProxy,
     cookie: {
       domain: Settings.cookieDomain,
-      maxAge: Settings.cookieSessionLength,
+      maxAge: Settings.cookieSessionLength, // in milliseconds, see https://github.com/expressjs/session#cookiemaxage
       secure: Settings.secureCookie
     },
     store: sessionStore,
@@ -113,6 +111,11 @@ webRouter.use(
     rolling: true
   })
 )
+
+// patch the session store to generate a validation token for every new session
+SessionStoreManager.enableValidationToken(sessionStore)
+// use middleware to reject all requests with invalid tokens
+webRouter.use(SessionStoreManager.validationMiddleware)
 
 // passport
 webRouter.use(passport.initialize())
@@ -204,9 +207,7 @@ webRouter.use(function(req, res, next) {
     dnsPrefetchControl: false,
     referrerPolicy: { policy: 'origin-when-cross-origin' },
     noCache: isLoggedIn || isProjectPage,
-    noSniff: false,
-    hsts: false,
-    frameguard: false
+    hsts: false
   })(req, res, next)
 })
 
@@ -244,6 +245,7 @@ const enableApiRouter =
 if (enableApiRouter || notDefined(enableApiRouter)) {
   logger.info('providing api router')
   app.use(privateApiRouter)
+  app.use(Validation.errorMiddleware)
   app.use(HttpErrorController.handleError)
   app.use(ErrorController.handleApiError)
 }
@@ -252,10 +254,14 @@ const enableWebRouter =
   Settings.web != null ? Settings.web.enableWebRouter : undefined
 if (enableWebRouter || notDefined(enableWebRouter)) {
   logger.info('providing web router')
+
   app.use(publicApiRouter) // public API goes with web router for public access
+  app.use(Validation.errorMiddleware)
   app.use(HttpErrorController.handleError)
   app.use(ErrorController.handleApiError)
+
   app.use(webRouter)
+  app.use(Validation.errorMiddleware)
   app.use(HttpErrorController.handleError)
   app.use(ErrorController.handleError)
 }

@@ -8,11 +8,12 @@ const Settings = require('settings-sharelatex')
 const basicAuth = require('basic-auth-connect')
 const UserHandler = require('../User/UserHandler')
 const UserSessionsManager = require('../User/UserSessionsManager')
+const SessionStoreManager = require('../../infrastructure/SessionStoreManager')
 const Analytics = require('../Analytics/AnalyticsManager')
 const passport = require('passport')
 const NotificationsBuilder = require('../Notifications/NotificationsBuilder')
+const UrlHelper = require('../Helpers/UrlHelper')
 const SudoModeHandler = require('../SudoMode/SudoModeHandler')
-const { URL } = require('url')
 const _ = require('lodash')
 
 const AuthenticationController = (module.exports = {
@@ -63,6 +64,8 @@ const AuthenticationController = (module.exports = {
           return callback(err)
         }
         req.sessionStore.generate(req)
+        // Note: the validation token is not writable, so it does not get
+        // transferred to the new session below.
         for (let key in oldSession) {
           const value = oldSession[key]
           if (key !== '__tmp') {
@@ -187,7 +190,11 @@ const AuthenticationController = (module.exports = {
   },
 
   _loginAsyncHandlers(req, user) {
-    UserHandler.setupLoginData(user, function() {})
+    UserHandler.setupLoginData(user, err => {
+      if (err != null) {
+        logger.warn({ err }, 'error setting up login data')
+      }
+    })
     LoginRateLimiter.recordSuccessfulLogin(user.email)
     AuthenticationController._recordSuccessfulLogin(user._id)
     AuthenticationController.ipMatchCheck(req, user)
@@ -303,6 +310,29 @@ const AuthenticationController = (module.exports = {
     }
   },
 
+  validateUserSession: function() {
+    // Middleware to check that the user's session is still good on key actions,
+    // such as opening a a project. Could be used to check that session has not
+    // exceeded a maximum lifetime (req.session.session_created), or for session
+    // hijacking checks (e.g. change of ip address, req.session.ip_address). For
+    // now, just check that the session has been loaded from the session store
+    // correctly.
+    return function(req, res, next) {
+      // check that the session store is returning valid results
+      if (req.session && !SessionStoreManager.hasValidationToken(req)) {
+        // force user to update session
+        req.session.regenerate(() => {
+          // need to destroy the existing session and generate a new one
+          // otherwise they will already be logged in when they are redirected
+          // to the login page
+          AuthenticationController._redirectToLoginOrRegisterPage(req, res)
+        })
+      } else {
+        next()
+      }
+    }
+  },
+
   _globalLoginWhitelist: [],
   addEndpointToLoginWhitelist(endpoint) {
     return AuthenticationController._globalLoginWhitelist.push(endpoint)
@@ -351,7 +381,7 @@ const AuthenticationController = (module.exports = {
       !/^\/(socket.io|js|stylesheets|img)\/.*$/.test(value) &&
       !/^.*\.(png|jpeg|svg)$/.test(value)
     ) {
-      const safePath = AuthenticationController._getSafeRedirectPath(value)
+      const safePath = UrlHelper.getSafeRedirectPath(value)
       return (req.session.postLoginRedirect = safePath)
     }
   },
@@ -433,7 +463,7 @@ const AuthenticationController = (module.exports = {
     let safePath
     const value = _.get(req, ['session', 'postLoginRedirect'])
     if (value) {
-      safePath = AuthenticationController._getSafeRedirectPath(value)
+      safePath = UrlHelper.getSafeRedirectPath(value)
     }
     return safePath || null
   },
@@ -442,15 +472,5 @@ const AuthenticationController = (module.exports = {
     if (req.session != null) {
       delete req.session.postLoginRedirect
     }
-  },
-
-  _getSafeRedirectPath(value) {
-    const baseURL = Settings.siteUrl // base URL is required to construct URL from path
-    const url = new URL(value, baseURL)
-    let safePath = `${url.pathname}${url.search}${url.hash}`
-    if (safePath === '/') {
-      safePath = undefined
-    }
-    return safePath
   }
 })

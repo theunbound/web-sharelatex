@@ -19,10 +19,6 @@ describe('SubscriptionUpdater', function() {
     this.adminUser = { _id: (this.adminuser_id = '5208dd34438843e2db000007') }
     this.otherUserId = '5208dd34438842e2db000005'
     this.allUserIds = ['13213', 'dsadas', 'djsaiud89']
-    this.userStub = {
-      _id: 'mock-user-stub-id',
-      email: 'mock-stub-email@baz.com'
-    }
     this.subscription = {
       _id: '111111111111111111111111',
       admin_id: this.adminUser._id,
@@ -86,13 +82,16 @@ describe('SubscriptionUpdater', function() {
         const users = memberIds.map(id => ({ _id: id }))
         callback(null, users)
       },
-      getUserOrUserStubById: sinon.stub()
+      getUser: sinon.stub()
     }
 
     this.ReferalFeatures = { getBonusFeatures: sinon.stub().callsArgWith(1) }
     this.Modules = { hooks: { fire: sinon.stub().callsArgWith(2, null, null) } }
     this.FeaturesUpdater = {
       refreshFeatures: sinon.stub().yields()
+    }
+    this.DeletedSubscription = {
+      findOneAndUpdate: sinon.stub().yields()
     }
     this.SubscriptionUpdater = SandboxedModule.require(modulePath, {
       globals: {
@@ -111,7 +110,10 @@ describe('SubscriptionUpdater', function() {
           warn() {}
         },
         'settings-sharelatex': this.Settings,
-        './FeaturesUpdater': this.FeaturesUpdater
+        './FeaturesUpdater': this.FeaturesUpdater,
+        '../../models/DeletedSubscription': {
+          DeletedSubscription: this.DeletedSubscription
+        }
       }
     })
   })
@@ -153,7 +155,7 @@ describe('SubscriptionUpdater', function() {
       )
       this.SubscriptionUpdater._updateSubscriptionFromRecurly = sinon
         .stub()
-        .callsArgWith(2)
+        .yields()
     })
 
     it('should update the subscription if the user already is admin of one', function(done) {
@@ -214,6 +216,7 @@ describe('SubscriptionUpdater', function() {
       this.SubscriptionUpdater._updateSubscriptionFromRecurly(
         this.recurlySubscription,
         this.subscription,
+        {},
         err => {
           if (err != null) {
             return done(err)
@@ -238,12 +241,13 @@ describe('SubscriptionUpdater', function() {
       this.SubscriptionUpdater._updateSubscriptionFromRecurly(
         this.recurlySubscription,
         this.subscription,
+        {},
         err => {
           if (err != null) {
             return done(err)
           }
           this.SubscriptionUpdater.deleteSubscription
-            .calledWith(this.subscription._id)
+            .calledWithMatch(this.subscription)
             .should.equal(true)
           done()
         }
@@ -254,6 +258,7 @@ describe('SubscriptionUpdater', function() {
       this.SubscriptionUpdater._updateSubscriptionFromRecurly(
         this.recurlySubscription,
         this.subscription,
+        {},
         err => {
           if (err != null) {
             return done(err)
@@ -282,6 +287,7 @@ describe('SubscriptionUpdater', function() {
       this.SubscriptionUpdater._updateSubscriptionFromRecurly(
         this.recurlySubscription,
         this.subscription,
+        {},
         err => {
           if (err != null) {
             return done(err)
@@ -297,6 +303,7 @@ describe('SubscriptionUpdater', function() {
       this.SubscriptionUpdater._updateSubscriptionFromRecurly(
         this.recurlySubscription,
         this.subscription,
+        {},
         err => {
           if (err != null) {
             return done(err)
@@ -381,7 +388,7 @@ describe('SubscriptionUpdater', function() {
   describe('removeUserFromGroups', function() {
     beforeEach(function() {
       this.FeaturesUpdater.refreshFeatures = sinon.stub().callsArgWith(1)
-      this.UserGetter.getUserOrUserStubById.yields(null, {}, false)
+      this.UserGetter.getUser.yields(null, {})
       this.fakeSubscriptions = [{ _id: 'fake-id-1' }, { _id: 'fake-id-2' }]
       this.SubscriptionLocator.getMemberSubscriptions.yields(
         null,
@@ -425,24 +432,12 @@ describe('SubscriptionUpdater', function() {
         }
       )
     })
-
-    it('should not update features for user stubs', function(done) {
-      this.UserGetter.getUserOrUserStubById.yields(null, {}, true)
-      this.SubscriptionUpdater.removeUserFromGroup(
-        this.subscription._id,
-        this.userStub._id,
-        () => {
-          this.FeaturesUpdater.refreshFeatures.called.should.equal(false)
-          done()
-        }
-      )
-    })
   })
 
   describe('deleteSubscription', function() {
     beforeEach(function(done) {
-      this.subscription_id = ObjectId().toString()
       this.subscription = {
+        _id: ObjectId().toString(),
         mock: 'subscription',
         admin_id: ObjectId(),
         member_ids: [ObjectId(), ObjectId(), ObjectId()]
@@ -451,18 +446,12 @@ describe('SubscriptionUpdater', function() {
         .stub()
         .yields(null, this.subscription)
       this.FeaturesUpdater.refreshFeatures = sinon.stub().yields()
-      this.SubscriptionUpdater.deleteSubscription(this.subscription_id, done)
-    })
-
-    it('should look up the subscription', function() {
-      this.SubscriptionLocator.getSubscription
-        .calledWith(this.subscription_id)
-        .should.equal(true)
+      this.SubscriptionUpdater.deleteSubscription(this.subscription, {}, done)
     })
 
     it('should remove the subscription', function() {
       this.SubscriptionModel.remove
-        .calledWith({ _id: ObjectId(this.subscription_id) })
+        .calledWith({ _id: this.subscription._id })
         .should.equal(true)
     })
 

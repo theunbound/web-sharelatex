@@ -1,29 +1,12 @@
-/* eslint-disable
-    camelcase,
-    handle-callback-err,
-    max-len,
-    no-path-concat,
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS101: Remove unnecessary use of Array.from
- * DS102: Remove unnecessary code created because of implicit returns
- * DS103: Rewrite code to no longer use __guard__
- * DS205: Consider reworking code to avoid use of IIFEs
- * DS207: Consider shorter variations of null checks
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
-let generateThemeList, ProjectController
+const Path = require('path')
+const fs = require('fs')
+const crypto = require('crypto')
 const async = require('async')
 const logger = require('logger-sharelatex')
-const projectDeleter = require('./ProjectDeleter')
-const projectDuplicator = require('./ProjectDuplicator')
-const projectCreationHandler = require('./ProjectCreationHandler')
-const ProjectLocator = require('./ProjectLocator');
-const editorController = require('../Editor/EditorController')
+const ProjectDeleter = require('./ProjectDeleter')
+const ProjectDuplicator = require('./ProjectDuplicator')
+const ProjectCreationHandler = require('./ProjectCreationHandler')
+const EditorController = require('../Editor/EditorController')
 const ProjectHelper = require('./ProjectHelper')
 const metrics = require('metrics-sharelatex')
 const { User } = require('../../models/User')
@@ -31,32 +14,29 @@ const TagsHandler = require('../Tags/TagsHandler')
 const SubscriptionLocator = require('../Subscription/SubscriptionLocator')
 const NotificationsHandler = require('../Notifications/NotificationsHandler')
 const LimitationsManager = require('../Subscription/LimitationsManager')
-const underscore = require('underscore')
 const Settings = require('settings-sharelatex')
 const AuthorizationManager = require('../Authorization/AuthorizationManager')
-const fs = require('fs')
 const InactiveProjectManager = require('../InactiveData/InactiveProjectManager')
 const ProjectUpdateHandler = require('./ProjectUpdateHandler')
 const ProjectGetter = require('./ProjectGetter')
 const PrivilegeLevels = require('../Authorization/PrivilegeLevels')
 const AuthenticationController = require('../Authentication/AuthenticationController')
 const PackageVersions = require('../../infrastructure/PackageVersions')
-const AnalyticsManager = require('../Analytics/AnalyticsManager')
 const Sources = require('../Authorization/Sources')
 const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
-const CollaboratorsHandler = require('../Collaborators/CollaboratorsHandler')
+const CollaboratorsGetter = require('../Collaborators/CollaboratorsGetter')
 const Modules = require('../../infrastructure/Modules')
 const ProjectEntityHandler = require('./ProjectEntityHandler')
 const UserGetter = require('../User/UserGetter')
 const NotificationsBuilder = require('../Notifications/NotificationsBuilder')
-const crypto = require('crypto')
 const { V1ConnectionError } = require('../Errors/Errors')
 const Features = require('../../infrastructure/Features')
 const BrandVariationsHandler = require('../BrandVariations/BrandVariationsHandler')
 const { getUserAffiliations } = require('../Institutions/InstitutionsAPI')
 const V1Handler = require('../V1/V1Handler')
+const { Project } = require('../../models/Project')
 
-module.exports = ProjectController = {
+const ProjectController = {
   _isInPercentageRollout(rolloutName, objectId, percentage) {
     if (Settings.bypassPercentageRollouts === true) {
       return true
@@ -71,32 +51,32 @@ module.exports = ProjectController = {
   },
 
   updateProjectSettings(req, res, next) {
-    const project_id = req.params.Project_id
+    const projectId = req.params.Project_id
 
     const jobs = []
 
     if (req.body.compiler != null) {
       jobs.push(callback =>
-        editorController.setCompiler(project_id, req.body.compiler, callback)
+        EditorController.setCompiler(projectId, req.body.compiler, callback)
       )
     }
 
     if (req.body.imageName != null) {
       jobs.push(callback =>
-        editorController.setImageName(project_id, req.body.imageName, callback)
+        EditorController.setImageName(projectId, req.body.imageName, callback)
       )
     }
 
     if (req.body.name != null) {
       jobs.push(callback =>
-        editorController.renameProject(project_id, req.body.name, callback)
+        EditorController.renameProject(projectId, req.body.name, callback)
       )
     }
 
     if (req.body.spellCheckLanguage != null) {
       jobs.push(callback =>
-        editorController.setSpellCheckLanguage(
-          project_id,
+        EditorController.setSpellCheckLanguage(
+          projectId,
           req.body.spellCheckLanguage,
           callback
         )
@@ -105,81 +85,71 @@ module.exports = ProjectController = {
 
     if (req.body.rootDocId != null) {
       jobs.push(callback =>
-        editorController.setRootDoc(project_id, req.body.rootDocId, callback)
+        EditorController.setRootDoc(projectId, req.body.rootDocId, callback)
       )
     }
 
-    return async.series(jobs, function(error) {
+    async.series(jobs, error => {
       if (error != null) {
         return next(error)
       }
-      return res.sendStatus(204)
+      res.sendStatus(204)
     })
   },
 
   updateProjectAdminSettings(req, res, next) {
-    const project_id = req.params.Project_id
+    const projectId = req.params.Project_id
 
     const jobs = []
     if (req.body.publicAccessLevel != null) {
       jobs.push(callback =>
-        editorController.setPublicAccessLevel(
-          project_id,
+        EditorController.setPublicAccessLevel(
+          projectId,
           req.body.publicAccessLevel,
           callback
         )
       )
     }
 
-    return async.series(jobs, function(error) {
+    async.series(jobs, error => {
       if (error != null) {
         return next(error)
       }
-      return res.sendStatus(204)
+      res.sendStatus(204)
     })
   },
 
   deleteProject(req, res) {
-    const project_id = req.params.Project_id
+    const projectId = req.params.Project_id
     const forever = (req.query != null ? req.query.forever : undefined) != null
-    logger.log({ project_id, forever }, 'received request to archive project')
+    logger.log({ projectId, forever }, 'received request to archive project')
     const user = AuthenticationController.getSessionUser(req)
-    const cb = function(err) {
+    const cb = err => {
       if (err != null) {
-        return res.sendStatus(500)
+        res.sendStatus(500)
       } else {
-        return res.sendStatus(200)
+        res.sendStatus(200)
       }
     }
 
     if (forever) {
-      return projectDeleter.deleteProject(
-        project_id,
+      ProjectDeleter.deleteProject(
+        projectId,
         { deleterUser: user, ipAddress: req.ip },
         cb
       )
     } else {
-      return projectDeleter.archiveProject(project_id, cb)
+      ProjectDeleter.legacyArchiveProject(projectId, cb)
     }
   },
 
-  expireDeletedProjectsAfterDuration(req, res) {
-    logger.log(
-      'received request to look for old deleted projects and expire them'
-    )
-    projectDeleter.expireDeletedProjectsAfterDuration(function(err) {
-      if (err != null) {
-        return res.sendStatus(500)
-      } else {
-        return res.sendStatus(200)
-      }
-    })
-  },
+  archiveProject(req, res, next) {
+    const projectId = req.params.Project_id
+    logger.log({ projectId }, 'received request to archive project')
 
-  expireDeletedProject(req, res, next) {
-    const { projectId } = req.params
-    logger.log('received request to expire deleted project', { projectId })
-    projectDeleter.expireDeletedProject(projectId, function(err) {
+    const user = AuthenticationController.getSessionUser(req)
+
+    ProjectDeleter.archiveProject(projectId, user._id, function(err) {
       if (err != null) {
         return next(err)
       } else {
@@ -188,41 +158,113 @@ module.exports = ProjectController = {
     })
   },
 
-  restoreProject(req, res) {
-    const project_id = req.params.Project_id
-    logger.log({ project_id }, 'received request to restore project')
-    return projectDeleter.restoreProject(project_id, function(err) {
+  unarchiveProject(req, res, next) {
+    const projectId = req.params.Project_id
+    logger.log({ projectId }, 'received request to unarchive project')
+
+    const user = AuthenticationController.getSessionUser(req)
+
+    ProjectDeleter.unarchiveProject(projectId, user._id, function(err) {
       if (err != null) {
-        return res.sendStatus(500)
+        return next(err)
       } else {
         return res.sendStatus(200)
       }
     })
   },
 
+  expireDeletedProjectsAfterDuration(req, res) {
+    logger.log(
+      'received request to look for old deleted projects and expire them'
+    )
+    ProjectDeleter.expireDeletedProjectsAfterDuration(err => {
+      if (err != null) {
+        res.sendStatus(500)
+      } else {
+        res.sendStatus(200)
+      }
+    })
+  },
+
+  expireDeletedProject(req, res, next) {
+    const { projectId } = req.params
+    logger.log('received request to expire deleted project', { projectId })
+    ProjectDeleter.expireDeletedProject(projectId, err => {
+      if (err != null) {
+        next(err)
+      } else {
+        res.sendStatus(200)
+      }
+    })
+  },
+
+  restoreProject(req, res) {
+    const projectId = req.params.Project_id
+    logger.log({ projectId }, 'received request to restore project')
+    ProjectDeleter.restoreProject(projectId, err => {
+      if (err != null) {
+        res.sendStatus(500)
+      } else {
+        res.sendStatus(200)
+      }
+    })
+  },
+
+  trashProject(req, res, next) {
+    const projectId = req.params.project_id
+    const userId = AuthenticationController.getLoggedInUserId(req)
+
+    Project.update(
+      { _id: projectId },
+      { $addToSet: { trashed: userId } },
+      error => {
+        if (error) {
+          return next(error)
+        }
+        res.sendStatus(200)
+      }
+    )
+  },
+
+  untrashProject(req, res, next) {
+    const projectId = req.params.project_id
+    const userId = AuthenticationController.getLoggedInUserId(req)
+
+    Project.update(
+      { _id: projectId },
+      { $pull: { trashed: userId } },
+      error => {
+        if (error) {
+          return next(error)
+        }
+        res.sendStatus(200)
+      }
+    )
+  },
+
   cloneProject(req, res, next) {
     res.setTimeout(5 * 60 * 1000) // allow extra time for the copy to complete
     metrics.inc('cloned-project')
-    const project_id = req.params.Project_id
+    const projectId = req.params.Project_id
     const { projectName } = req.body
-    logger.log({ project_id, projectName }, 'cloning project')
+    logger.log({ projectId, projectName }, 'cloning project')
     if (!AuthenticationController.isUserLoggedIn(req)) {
       return res.send({ redir: '/register' })
     }
     const currentUser = AuthenticationController.getSessionUser(req)
-    return projectDuplicator.duplicate(
+    ProjectDuplicator.duplicate(
       currentUser,
-      project_id,
+      projectId,
       projectName,
-      function(err, project) {
+      (err, project) => {
         if (err != null) {
           logger.warn(
-            { err, project_id, user_id: currentUser._id },
+            { err, projectId, userId: currentUser._id },
             'error cloning project'
           )
           return next(err)
         }
-        return res.send({
+        res.send({
           name: project.name,
           project_id: project._id,
           owner_ref: project.owner_ref
@@ -232,13 +274,33 @@ module.exports = ProjectController = {
   },
 
   newProject(req, res, next) {
-    const user_id = AuthenticationController.getLoggedInUserId(req)
+    const userId = AuthenticationController.getLoggedInUserId(req)
     const projectName =
       req.body.projectName != null ? req.body.projectName.trim() : undefined
     const { template } = req.body
-    function finalise(err, project) {
-      if (err != null) {
-        return next(err)
+    logger.log(
+      { user: userId, projectType: template, name: projectName },
+      'creating project'
+    )
+    async.waterfall(
+      [
+        cb => {
+          if (template === 'example') {
+            ProjectCreationHandler.createExampleProject(userId, projectName, cb)
+          } else {
+            ProjectCreationHandler.createBasicProject(userId, projectName, cb)
+          }
+        }
+      ],
+      (err, project) => {
+        if (err != null) {
+          return next(err)
+        }
+        logger.log(
+          { project, userId, name: projectName, templateType: template },
+          'created project'
+        )
+        res.send({ project_id: project._id })
       }
       logger.log(
         { project, user: user_id, name: projectName, templateType: template },
@@ -303,77 +365,75 @@ module.exports = ProjectController = {
   },
 
   renameProject(req, res, next) {
-    const project_id = req.params.Project_id
+    const projectId = req.params.Project_id
     const newName = req.body.newProjectName
-    return editorController.renameProject(project_id, newName, function(err) {
+    EditorController.renameProject(projectId, newName, err => {
       if (err != null) {
         return next(err)
       }
-      return res.sendStatus(200)
+      res.sendStatus(200)
     })
   },
 
   userProjectsJson(req, res, next) {
-    const user_id = AuthenticationController.getLoggedInUserId(req)
-    return ProjectGetter.findAllUsersProjects(
-      user_id,
-      'name lastUpdated publicAccesLevel archived owner_ref tokens',
-      function(err, projects) {
+    const userId = AuthenticationController.getLoggedInUserId(req)
+    ProjectGetter.findAllUsersProjects(
+      userId,
+      'name lastUpdated publicAccesLevel archived trashed owner_ref tokens',
+      (err, projects) => {
         if (err != null) {
           return next(err)
         }
-        projects = ProjectController._buildProjectList(projects, user_id)
-          .filter(p => !ProjectHelper.isArchived(p, user_id))
+        projects = ProjectController._buildProjectList(projects, userId)
+          .filter(p => !ProjectHelper.isArchivedOrTrashed(p, userId))
           .filter(p => !p.isV1Project)
           .map(p => ({ _id: p.id, name: p.name, accessLevel: p.accessLevel }))
 
-        return res.json({ projects })
+        res.json({ projects })
       }
     )
   },
 
   projectEntitiesJson(req, res, next) {
-    const user_id = AuthenticationController.getLoggedInUserId(req)
-    const project_id = req.params.Project_id
-    return ProjectGetter.getProject(project_id, function(err, project) {
+    const projectId = req.params.Project_id
+    ProjectGetter.getProject(projectId, (err, project) => {
       if (err != null) {
         return next(err)
       }
-      return ProjectEntityHandler.getAllEntitiesFromProject(project, function(
-        err,
-        docs,
-        files
-      ) {
-        if (err != null) {
-          return next(err)
+      ProjectEntityHandler.getAllEntitiesFromProject(
+        project,
+        (err, docs, files) => {
+          if (err != null) {
+            return next(err)
+          }
+          const entities = docs
+            .concat(files)
+            .sort((a, b) => a.path > b.path) // Sort by path ascending
+            .map(e => ({
+              path: e.path,
+              type: e.doc != null ? 'doc' : 'file'
+            }))
+          res.json({ project_id: projectId, entities })
         }
-        const entities = docs
-          .concat(files)
-          .sort((a, b) => a.path > b.path) // Sort by path ascending
-          .map(e => ({
-            path: e.path,
-            type: e.doc != null ? 'doc' : 'file'
-          }))
-        return res.json({ project_id, entities })
-      })
+      )
     })
   },
 
   projectListPage(req, res, next) {
     const timer = new metrics.Timer('project-list')
-    const user_id = AuthenticationController.getLoggedInUserId(req)
+    const userId = AuthenticationController.getLoggedInUserId(req)
     const currentUser = AuthenticationController.getSessionUser(req)
-    return async.parallel(
+    async.parallel(
       {
         tags(cb) {
-          return TagsHandler.getAllTags(user_id, cb)
+          TagsHandler.getAllTags(userId, cb)
         },
         notifications(cb) {
-          return NotificationsHandler.getUserNotifications(user_id, cb)
+          NotificationsHandler.getUserNotifications(userId, cb)
         },
         projects(cb) {
-          return ProjectGetter.findAllUsersProjects(
-            user_id,
+          ProjectGetter.findAllUsersProjects(
+            userId,
             'name lastUpdated lastUpdatedBy publicAccesLevel archived owner_ref tokens',
             cb
           )
@@ -383,34 +443,31 @@ module.exports = ProjectController = {
             return cb(null, null)
           }
 
-          return Modules.hooks.fire('findAllV1Projects', user_id, function(
-            error,
-            projects
-          ) {
+          Modules.hooks.fire('findAllV1Projects', userId, (error, projects) => {
             if (projects == null) {
               projects = []
             }
             if (error != null && error instanceof V1ConnectionError) {
               return cb(null, { projects: [], tags: [], noConnection: true })
             }
-            return cb(error, projects[0])
+            cb(error, projects[0])
           })
         }, // hooks.fire returns an array of results, only need first
         hasSubscription(cb) {
-          return LimitationsManager.hasPaidSubscription(currentUser, function(
-            error,
-            hasPaidSubscription
-          ) {
-            if (error != null && error instanceof V1ConnectionError) {
-              return cb(null, true)
+          LimitationsManager.hasPaidSubscription(
+            currentUser,
+            (error, hasPaidSubscription) => {
+              if (error != null && error instanceof V1ConnectionError) {
+                return cb(null, true)
+              }
+              cb(error, hasPaidSubscription)
             }
-            return cb(error, hasPaidSubscription)
-          })
+          )
         },
         user(cb) {
-          return User.findById(
-            user_id,
-            'featureSwitches overleaf awareOfV2 features',
+          User.findById(
+            userId,
+            'emails featureSwitches overleaf awareOfV2 features lastLoginIp',
             cb
           )
         },
@@ -418,60 +475,110 @@ module.exports = ProjectController = {
           if (!Features.hasFeature('affiliations')) {
             return cb(null, null)
           }
-          return getUserAffiliations(user_id, cb)
+          getUserAffiliations(userId, cb)
         }
       },
-      function(err, results) {
+      (err, results) => {
         if (err != null) {
           logger.warn({ err }, 'error getting data for project list page')
           return next(err)
         }
+        const { notifications, user, userAffiliations } = results
         const v1Tags =
           (results.v1Projects != null ? results.v1Projects.tags : undefined) ||
           []
         const tags = results.tags.concat(v1Tags)
-        const notifications = require('underscore').map(
-          results.notifications,
-          function(notification) {
-            notification.html = req.i18n.translate(
-              notification.templateKey,
-              notification.messageOpts
-            )
-            return notification
+        for (const notification of notifications) {
+          notification.html = req.i18n.translate(
+            notification.templateKey,
+            notification.messageOpts
+          )
+        }
+
+        // Institution SSO Notifications
+        if (Features.hasFeature('saml') || req.session.samlBeta) {
+          const samlSession = req.session.saml
+          // Notification: SSO Available
+          // Could have multiple emails at the same institution, and if any are
+          // linked to the institution then do not show notification for others
+          const linkedInstitutionIds = []
+          const linkedInstitutionEmails = []
+          user.emails.forEach(email => {
+            if (email.samlProviderId) {
+              linkedInstitutionEmails.push(email.email)
+              linkedInstitutionIds.push(email.samlProviderId)
+            }
+          })
+          if (Array.isArray(userAffiliations)) {
+            userAffiliations.forEach(affiliation => {
+              if (
+                affiliation.institution &&
+                affiliation.institution.ssoEnabled &&
+                linkedInstitutionEmails.indexOf(affiliation.email) === -1 &&
+                linkedInstitutionIds.indexOf(
+                  affiliation.institution.id.toString()
+                ) === -1
+              ) {
+                notifications.push({
+                  email: affiliation.email,
+                  institutionId: affiliation.institution.id,
+                  institutionName: affiliation.institution.name,
+                  templateKey: 'notification_institution_sso_available'
+                })
+              }
+            })
           }
-        )
+
+          if (samlSession) {
+            // Notification: After SSO Linked
+            if (samlSession.linked) {
+              notifications.push({
+                email: samlSession.institutionEmail,
+                institutionName: samlSession.linked.universityName,
+                templateKey: 'notification_institution_sso_linked'
+              })
+            }
+
+            // Notification: After SSO Linked or Logging in
+            // The requested email does not match primary email returned from
+            // the institution
+            if (samlSession.emailNonCanonical) {
+              notifications.push({
+                institutionEmail: samlSession.emailNonCanonical,
+                requestedEmail: samlSession.requestedEmail,
+                templateKey: 'notification_institution_sso_non_canonical'
+              })
+            }
+
+            // Notification: Tried to register, but account already existed
+            if (samlSession.registerIntercept) {
+              notifications.push({
+                email: samlSession.institutionEmail,
+                templateKey: 'notification_institution_sso_already_registered'
+              })
+            }
+          }
+          delete req.session.saml
+        }
+
         const portalTemplates = ProjectController._buildPortalTemplatesList(
-          results.userAffiliations
+          userAffiliations
         )
         const projects = ProjectController._buildProjectList(
           results.projects,
-          user_id,
+          userId,
           results.v1Projects != null ? results.v1Projects.projects : undefined
         )
-        const { user } = results
-        const { userAffiliations } = results
         const warnings = ProjectController._buildWarningsList(
           results.v1Projects
         )
 
         // in v2 add notifications for matching university IPs
-        if (Settings.overleaf != null) {
-          UserGetter.getUser(user_id, { lastLoginIp: 1 }, function(
-            error,
-            user
-          ) {
-            if (req.ip !== user.lastLoginIp) {
-              return NotificationsBuilder.ipMatcherAffiliation(user._id).create(
-                req.ip
-              )
-            }
-          })
+        if (Settings.overleaf != null && req.ip !== user.lastLoginIp) {
+          NotificationsBuilder.ipMatcherAffiliation(user._id).create(req.ip)
         }
 
-        return ProjectController._injectProjectUsers(projects, function(
-          error,
-          projects
-        ) {
+        ProjectController._injectProjectUsers(projects, (error, projects) => {
           if (error != null) {
             return next(error)
           }
@@ -522,40 +629,40 @@ module.exports = ProjectController = {
           }
 
           res.render('project/list', viewModel)
-          return timer.done()
+          timer.done()
         })
       }
     )
   },
 
   loadEditor(req, res, next) {
-    let anonymous, user_id
+    let anonymous, userId
     const timer = new metrics.Timer('load-editor')
     if (!Settings.editorIsOpen) {
       return res.render('general/closed', { title: 'updating_site' })
     }
 
     if (AuthenticationController.isUserLoggedIn(req)) {
-      user_id = AuthenticationController.getLoggedInUserId(req)
+      userId = AuthenticationController.getLoggedInUserId(req)
       anonymous = false
     } else {
       anonymous = true
-      user_id = null
+      userId = null
     }
 
-    const project_id = req.params.Project_id
-    logger.log({ project_id, anonymous, user_id }, 'loading editor')
+    const projectId = req.params.Project_id
+    logger.log({ projectId, anonymous, userId }, 'loading editor')
 
     // record failures to load the custom websocket
     if ((req.query != null ? req.query.ws : undefined) === 'fallback') {
       metrics.inc('load-editor-ws-fallback')
     }
 
-    return async.auto(
+    async.auto(
       {
         project(cb) {
-          return ProjectGetter.getProject(
-            project_id,
+          ProjectGetter.getProject(
+            projectId,
             {
               name: 1,
               lastUpdated: 1,
@@ -565,7 +672,7 @@ module.exports = ProjectController = {
               overleaf: 1,
               tokens: 1
             },
-            function(err, project) {
+            (err, project) => {
               if (err != null) {
                 return cb(err)
               }
@@ -588,56 +695,52 @@ module.exports = ProjectController = {
               ) {
                 return cb(null, project)
               }
-              return V1Handler.getDocExported(
+              V1Handler.getDocExported(
                 project.tokens.readAndWrite,
-                function(err, doc_exported) {
+                (err, docExported) => {
                   if (err != null) {
                     return next(err)
                   }
-                  project.exporting = doc_exported.exporting
-                  return cb(null, project)
+                  project.exporting = docExported.exporting
+                  cb(null, project)
                 }
               )
             }
           )
         },
         user(cb) {
-          if (user_id == null) {
-            return cb(null, defaultSettingsForAnonymousUser(user_id))
+          if (userId == null) {
+            cb(null, defaultSettingsForAnonymousUser(userId))
           } else {
-            return User.findById(user_id, function(err, user) {
-              logger.log({ project_id, user_id }, 'got user')
-              return cb(err, user)
+            User.findById(userId, (err, user) => {
+              logger.log({ projectId, userId }, 'got user')
+              cb(err, user)
             })
           }
         },
         subscription(cb) {
-          if (user_id == null) {
+          if (userId == null) {
             return cb()
           }
-          return SubscriptionLocator.getUsersSubscription(user_id, cb)
+          SubscriptionLocator.getUsersSubscription(userId, cb)
         },
         activate(cb) {
-          return InactiveProjectManager.reactivateProjectIfRequired(
-            project_id,
-            cb
-          )
+          InactiveProjectManager.reactivateProjectIfRequired(projectId, cb)
         },
         markAsOpened(cb) {
           // don't need to wait for this to complete
-          ProjectUpdateHandler.markAsOpened(project_id, function() {})
-          return cb()
+          ProjectUpdateHandler.markAsOpened(projectId, () => {})
+          cb()
         },
         isTokenMember(cb) {
-          cb = underscore.once(cb)
-          if (user_id == null) {
+          if (userId == null) {
             return cb()
           }
-          return CollaboratorsHandler.userIsTokenMember(user_id, project_id, cb)
+          CollaboratorsGetter.userIsTokenMember(userId, projectId, cb)
         },
         brandVariation: [
           'project',
-          function(cb, results) {
+          (cb, results) => {
             if (
               (results.project != null
                 ? results.project.brandVariationId
@@ -645,14 +748,14 @@ module.exports = ProjectController = {
             ) {
               return cb()
             }
-            return BrandVariationsHandler.getBrandVariationById(
+            BrandVariationsHandler.getBrandVariationById(
               results.project.brandVariationId,
               (error, brandVariationDetails) => cb(error, brandVariationDetails)
             )
           }
         ]
       },
-      function(err, results) {
+      (err, results) => {
         if (err != null) {
           logger.warn({ err }, 'error getting details for project page')
           return next(err)
@@ -665,17 +768,17 @@ module.exports = ProjectController = {
         const daysSinceLastUpdated =
           (new Date() - project.lastUpdated) / 86400000
         logger.log(
-          { project_id, daysSinceLastUpdated },
+          { projectId, daysSinceLastUpdated },
           'got db results for loading editor'
         )
 
-        const token = TokenAccessHandler.getRequestToken(req, project_id)
+        const token = TokenAccessHandler.getRequestToken(req, projectId)
         const { isTokenMember } = results
-        return AuthorizationManager.getPrivilegeLevelForProject(
-          user_id,
-          project_id,
+        AuthorizationManager.getPrivilegeLevelForProject(
+          userId,
+          projectId,
           token,
-          function(error, privilegeLevel) {
+          (error, privilegeLevel) => {
             let allowedFreeTrial
             if (error != null) {
               return next(error)
@@ -700,14 +803,14 @@ module.exports = ProjectController = {
               allowedFreeTrial = !!subscription.freeTrial.allowed || true
             }
 
-            logger.log({ project_id }, 'rendering editor page')
+            logger.log({ projectId }, 'rendering editor page')
             res.render('project/editor', {
               title: project.name,
               priority_title: true,
               bodyClasses: ['editor'],
               project_id: project._id,
               user: {
-                id: user_id,
+                id: userId,
                 email: user.email,
                 first_name: user.first_name,
                 last_name: user.last_name,
@@ -740,21 +843,25 @@ module.exports = ProjectController = {
               anonymous,
               anonymousAccessToken: req._anonymousAccessToken,
               isTokenMember,
+              isRestrictedTokenMember: AuthorizationManager.isRestrictedUser(
+                userId,
+                privilegeLevel,
+                isTokenMember
+              ),
               languages: Settings.languages,
               editorThemes: THEME_LIST,
               maxDocLength: Settings.max_doc_length,
-              useV2History: !!__guard__(
-                project.overleaf != null ? project.overleaf.history : undefined,
-                x => x.display
-              ),
+              useV2History:
+                project.overleaf &&
+                project.overleaf.history &&
+                Boolean(project.overleaf.history.display),
               showTestControls:
-                (req.query != null ? req.query.tc : undefined) === 'true' ||
-                user.isAdmin,
+                (req.query && req.query.tc === 'true') || user.isAdmin,
               brandVariation,
               allowedImageNames: Settings.allowedImageNames || [],
               gitBridgePublicBaseUrl: Settings.gitBridgePublicBaseUrl
             })
-            return timer.done()
+            timer.done()
           }
         )
       }
@@ -774,7 +881,7 @@ module.exports = ProjectController = {
       tokenReadOnly
     } = allProjects
     const projects = []
-    for (project of Array.from(owned)) {
+    for (project of owned) {
       projects.push(
         ProjectController._buildProjectViewModel(
           project,
@@ -785,7 +892,7 @@ module.exports = ProjectController = {
       )
     }
     // Invite-access
-    for (project of Array.from(readAndWrite)) {
+    for (project of readAndWrite) {
       projects.push(
         ProjectController._buildProjectViewModel(
           project,
@@ -795,7 +902,7 @@ module.exports = ProjectController = {
         )
       )
     }
-    for (project of Array.from(readOnly)) {
+    for (project of readOnly) {
       projects.push(
         ProjectController._buildProjectViewModel(
           project,
@@ -805,13 +912,13 @@ module.exports = ProjectController = {
         )
       )
     }
-    for (project of Array.from(v1Projects)) {
+    for (project of v1Projects) {
       projects.push(ProjectController._buildV1ProjectViewModel(project))
     }
     // Token-access
     //   Only add these projects if they're not already present, this gives us cascading access
     //   from 'owner' => 'token-read-only'
-    for (project of Array.from(tokenReadAndWrite)) {
+    for (project of tokenReadAndWrite) {
       if (
         projects.filter(p => p.id.toString() === project._id.toString())
           .length === 0
@@ -826,7 +933,7 @@ module.exports = ProjectController = {
         )
       }
     }
-    for (project of Array.from(tokenReadOnly)) {
+    for (project of tokenReadOnly) {
       if (
         projects.filter(p => p.id.toString() === project._id.toString())
           .length === 0
@@ -860,6 +967,10 @@ module.exports = ProjectController = {
       tokens: project.tokens,
       isV1Project: false
     }
+    if (accessLevel === PrivilegeLevels.READ_ONLY && source === Sources.TOKEN) {
+      model.owner_ref = null
+      model.lastUpdatedBy = null
+    }
     return model
   },
 
@@ -892,12 +1003,8 @@ module.exports = ProjectController = {
   },
 
   _injectProjectUsers(projects, callback) {
-    let project
-    if (callback == null) {
-      callback = function(error, projects) {}
-    }
     const users = {}
-    for (project of Array.from(projects)) {
+    for (const project of projects) {
       if (project.owner_ref != null) {
         users[project.owner_ref.toString()] = true
       }
@@ -906,37 +1013,38 @@ module.exports = ProjectController = {
       }
     }
 
-    const jobs = []
-    for (let user_id in users) {
-      const _ = users[user_id]
-      ;(user_id =>
-        jobs.push(callback =>
-          UserGetter.getUserOrUserStubById(
-            user_id,
-            { first_name: 1, last_name: 1, email: 1 },
-            function(error, user) {
-              if (error != null) {
-                return callback(error)
-              }
-              users[user_id] = user
-              return callback()
+    const userIds = Object.keys(users)
+    async.eachSeries(
+      userIds,
+      (userId, cb) => {
+        UserGetter.getUser(
+          userId,
+          { first_name: 1, last_name: 1, email: 1 },
+          (error, user) => {
+            if (error != null) {
+              return cb(error)
             }
-          )
-        ))(user_id)
-    }
-
-    return async.series(jobs, function(error) {
-      for (project of Array.from(projects)) {
-        if (project.owner_ref != null) {
-          project.owner = users[project.owner_ref.toString()]
+            users[userId] = user
+            cb()
+          }
+        )
+      },
+      error => {
+        if (error != null) {
+          return callback(error)
         }
-        if (project.lastUpdatedBy != null) {
-          project.lastUpdatedBy =
-            users[project.lastUpdatedBy.toString()] || null
+        for (const project of projects) {
+          if (project.owner_ref != null) {
+            project.owner = users[project.owner_ref.toString()]
+          }
+          if (project.lastUpdatedBy != null) {
+            project.lastUpdatedBy =
+              users[project.lastUpdatedBy.toString()] || null
+          }
         }
+        callback(null, projects)
       }
-      return callback(null, projects)
-    })
+    )
   },
 
   _buildWarningsList(v1ProjectData) {
@@ -960,7 +1068,7 @@ module.exports = ProjectController = {
       affiliations = []
     }
     const portalTemplates = []
-    for (let aff of Array.from(affiliations)) {
+    for (let aff of affiliations) {
       if (
         aff.portal &&
         aff.portal.slug &&
@@ -978,8 +1086,8 @@ module.exports = ProjectController = {
   }
 }
 
-var defaultSettingsForAnonymousUser = user_id => ({
-  id: user_id,
+var defaultSettingsForAnonymousUser = userId => ({
+  id: userId,
   ace: {
     mode: 'none',
     theme: 'textmate',
@@ -1000,26 +1108,20 @@ var defaultSettingsForAnonymousUser = user_id => ({
 })
 
 var THEME_LIST = []
-;(generateThemeList = function() {
+function generateThemeList() {
   const files = fs.readdirSync(
-    __dirname + '/../../../../public/js/' + PackageVersions.lib('ace')
+    Path.join(__dirname, '/../../../../public/js/', PackageVersions.lib('ace'))
   )
-  return (() => {
-    const result = []
-    for (let file of Array.from(files)) {
-      if (file.slice(-2) === 'js' && /^theme-/.test(file)) {
-        const cleanName = file.slice(0, -3).slice(6)
-        result.push(THEME_LIST.push(cleanName))
-      } else {
-        result.push(undefined)
-      }
+  const result = []
+  for (let file of files) {
+    if (file.slice(-2) === 'js' && /^theme-/.test(file)) {
+      const cleanName = file.slice(0, -3).slice(6)
+      result.push(THEME_LIST.push(cleanName))
+    } else {
+      result.push(undefined)
     }
-    return result
-  })()
-})()
-
-function __guard__(value, transform) {
-  return typeof value !== 'undefined' && value !== null
-    ? transform(value)
-    : undefined
+  }
 }
+generateThemeList()
+
+module.exports = ProjectController

@@ -27,7 +27,8 @@ const UserSchema = new Schema({
           return new Date()
         }
       },
-      confirmedAt: { type: Date }
+      confirmedAt: { type: Date },
+      samlProviderId: { type: String }
     }
   ],
   first_name: { type: String, default: '' },
@@ -121,6 +122,7 @@ const UserSchema = new Schema({
     refreshToken: { type: String }
   },
   awareOfV2: { type: Boolean, default: false },
+  samlIdentifiers: { type: Array, default: [] },
   thirdPartyIdentifiers: { type: Array, default: [] },
   migratedAt: { type: Date }
 })

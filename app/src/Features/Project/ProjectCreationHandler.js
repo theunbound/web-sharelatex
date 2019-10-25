@@ -119,11 +119,8 @@ const ProjectCreationHandler = {
       (cb) => {
         User.findById(
           owner_id, 'ace.spellCheckLanguage', function( err, user ) {
-            if (user != null) {
-              // It's possible the owner_id is a UserStub
-              project.spellCheckLanguage = user.ace.spellCheckLanguage;
-            }
-            cb(null);
+            project.spellCheckLanguage = user.ace.spellCheckLanguage;
+            cb(err);
           }
         );
       }, (cb) => {

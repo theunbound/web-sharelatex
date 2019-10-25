@@ -17,6 +17,7 @@ const async = require('async')
 const RecurlyWrapper = require('./RecurlyWrapper')
 const Settings = require('settings-sharelatex')
 const { User } = require('../../models/User')
+const { promisifyAll } = require('../../util/promises')
 const logger = require('logger-sharelatex')
 const SubscriptionUpdater = require('./SubscriptionUpdater')
 const LimitationsManager = require('./LimitationsManager')
@@ -24,7 +25,7 @@ const EmailHandler = require('../Email/EmailHandler')
 const Events = require('../../infrastructure/Events')
 const Analytics = require('../Analytics/AnalyticsManager')
 
-module.exports = {
+const SubscriptionHandler = {
   validateNoSubscriptionInRecurly(user_id, callback) {
     if (callback == null) {
       callback = function(error, valid) {}
@@ -57,39 +58,38 @@ module.exports = {
   },
 
   createSubscription(user, subscriptionDetails, recurlyTokenIds, callback) {
-    const self = this
     const clientTokenId = ''
-    return this.validateNoSubscriptionInRecurly(user._id, function(
-      error,
-      valid
-    ) {
-      if (error != null) {
-        return callback(error)
-      }
-      if (!valid) {
-        return callback(new Error('user already has subscription in recurly'))
-      }
-      return RecurlyWrapper.createSubscription(
-        user,
-        subscriptionDetails,
-        recurlyTokenIds,
-        function(error, recurlySubscription) {
-          if (error != null) {
-            return callback(error)
-          }
-          return SubscriptionUpdater.syncSubscription(
-            recurlySubscription,
-            user._id,
-            function(error) {
-              if (error != null) {
-                return callback(error)
-              }
-              return callback()
-            }
-          )
+    return SubscriptionHandler.validateNoSubscriptionInRecurly(
+      user._id,
+      function(error, valid) {
+        if (error != null) {
+          return callback(error)
         }
-      )
-    })
+        if (!valid) {
+          return callback(new Error('user already has subscription in recurly'))
+        }
+        return RecurlyWrapper.createSubscription(
+          user,
+          subscriptionDetails,
+          recurlyTokenIds,
+          function(error, recurlySubscription) {
+            if (error != null) {
+              return callback(error)
+            }
+            return SubscriptionUpdater.syncSubscription(
+              recurlySubscription,
+              user._id,
+              function(error) {
+                if (error != null) {
+                  return callback(error)
+                }
+                return callback()
+              }
+            )
+          }
+        )
+      }
+    )
   },
 
   updateSubscription(user, plan_code, coupon_code, callback) {
@@ -169,7 +169,19 @@ module.exports = {
             }
             const ONE_HOUR_IN_MS = 1000 * 60 * 60
             setTimeout(
-              () => EmailHandler.sendEmail('canceledSubscription', emailOpts),
+              () =>
+                EmailHandler.sendEmail(
+                  'canceledSubscription',
+                  emailOpts,
+                  err => {
+                    if (err != null) {
+                      logger.warn(
+                        { err },
+                        'failed to send confirmation email for subscription cancellation'
+                      )
+                    }
+                  }
+                ),
               ONE_HOUR_IN_MS
             )
             Events.emit('cancelSubscription', user._id)
@@ -196,9 +208,18 @@ module.exports = {
             if (error != null) {
               return callback(error)
             }
-            EmailHandler.sendEmail('reactivatedSubscription', {
-              to: user.email
-            })
+            EmailHandler.sendEmail(
+              'reactivatedSubscription',
+              { to: user.email },
+              err => {
+                if (err != null) {
+                  logger.warn(
+                    { err },
+                    'failed to send reactivation confirmation email'
+                  )
+                }
+              }
+            )
             Analytics.recordEvent(user._id, 'subscription-reactivated')
             return callback()
           }
@@ -209,7 +230,7 @@ module.exports = {
     })
   },
 
-  recurlyCallback(recurlySubscription, callback) {
+  recurlyCallback(recurlySubscription, requesterData, callback) {
     return RecurlyWrapper.getSubscription(
       recurlySubscription.uuid,
       { includeAccount: true },
@@ -230,6 +251,7 @@ module.exports = {
           return SubscriptionUpdater.syncSubscription(
             recurlySubscription,
             user != null ? user._id : undefined,
+            requesterData,
             callback
           )
         })
@@ -245,3 +267,6 @@ module.exports = {
     )
   }
 }
+
+SubscriptionHandler.promises = promisifyAll(SubscriptionHandler)
+module.exports = SubscriptionHandler

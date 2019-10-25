@@ -38,12 +38,13 @@ module.exports = Features = {
         return Settings.overleaf != null
       case 'oauth':
         return Settings.oauth != null
-      case 'publish-templates':
-        return true
-      case 'view-templates':
+      case 'templates-server-pro':
         return Settings.overleaf == null
       case 'affiliations':
-        return Settings.overleaf != null
+        // Checking both properties is needed for the time being to allow
+        // enabling the feature in web-api and disabling in Server Pro
+        // see https://github.com/overleaf/web-internal/pull/2127
+        return Settings.apis.v1 && !!Settings.apis.v1.url
       case 'redirect-sl':
         return Settings.redirectToV2 != null
       case 'overleaf-integration':
@@ -51,7 +52,7 @@ module.exports = Features = {
       case 'references':
         return Settings.apis.references.url != null
       case 'saml':
-        return Settings.enableSaml != null
+        return Settings.enableSaml
       default:
         throw new Error(`unknown feature: ${feature}`)
     }

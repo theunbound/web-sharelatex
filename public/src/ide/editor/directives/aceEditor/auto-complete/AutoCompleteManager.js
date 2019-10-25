@@ -1,4 +1,3 @@
-/* global _ */
 define([
   'ide/editor/directives/aceEditor/auto-complete/CommandManager',
   'ide/editor/directives/aceEditor/auto-complete/EnvironmentManager',
@@ -243,6 +242,7 @@ define([
       // NOTE: this is also the case when a user backspaces over a highlighted
       // region
       if (
+        !change.remote &&
         change.action === 'insert' &&
         end.row === cursorPosition.row &&
         end.column === cursorPosition.column + 1

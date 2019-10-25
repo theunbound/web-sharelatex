@@ -60,7 +60,7 @@ describe('SubscriptionController', function() {
       updateSubscription: sinon.stub().callsArgWith(3),
       reactivateSubscription: sinon.stub().callsArgWith(1),
       cancelSubscription: sinon.stub().callsArgWith(1),
-      recurlyCallback: sinon.stub().callsArgWith(1),
+      recurlyCallback: sinon.stub().yields(),
       startFreeTrial: sinon.stub()
     }
 
@@ -550,7 +550,7 @@ describe('SubscriptionController', function() {
         this.user.id = this.activeRecurlySubscription.account.account_code
         this.req = {
           body: {
-            new_subscription_notification: {
+            renewed_subscription_notification: {
               subscription: {
                 uuid: this.activeRecurlySubscription.uuid
               }

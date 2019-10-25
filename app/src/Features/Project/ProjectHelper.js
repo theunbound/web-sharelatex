@@ -11,7 +11,6 @@
  * DS207: Consider shorter variations of null checks
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
-let ProjectHelper
 const ENGINE_TO_COMPILER_MAP = {
   latex_dvipdf: 'latex',
   pdflatex: 'pdflatex',
@@ -19,8 +18,10 @@ const ENGINE_TO_COMPILER_MAP = {
   lualatex: 'lualatex'
 }
 const { ObjectId } = require('../../infrastructure/mongojs')
+const _ = require('lodash')
+const { promisify } = require('util')
 
-module.exports = ProjectHelper = {
+const ProjectHelper = {
   compilerFromV1Engine(engine) {
     return ENGINE_TO_COMPILER_MAP[engine]
   },
@@ -31,8 +32,59 @@ module.exports = ProjectHelper = {
     if (Array.isArray(project.archived)) {
       return project.archived.find(id => id.equals(userId)) !== undefined
     } else {
-      return project.archived
+      return !!project.archived
     }
+  },
+
+  isTrashed(project, userId) {
+    userId = ObjectId(userId)
+
+    if (project.trashed) {
+      return project.trashed.find(id => id.equals(userId)) !== undefined
+    } else {
+      return false
+    }
+  },
+
+  isArchivedOrTrashed(project, userId) {
+    return (
+      ProjectHelper.isArchived(project, userId) ||
+      ProjectHelper.isTrashed(project, userId)
+    )
+  },
+
+  allCollaborators(project) {
+    return _.unionWith(
+      [project.owner_ref],
+      project.collaberator_refs,
+      project.readOnly_refs,
+      project.tokenAccessReadAndWrite_refs,
+      project.tokenAccessReadOnly_refs,
+      ProjectHelper._objectIdEquals
+    )
+  },
+
+  calculateArchivedArray(project, userId, action) {
+    let archived = project.archived
+    userId = ObjectId(userId)
+
+    if (archived === true) {
+      archived = ProjectHelper.allCollaborators(project)
+    } else if (!archived) {
+      archived = []
+    }
+
+    if (action === 'ARCHIVE') {
+      archived = _.unionWith(archived, [userId], ProjectHelper._objectIdEquals)
+    } else if (action === 'UNARCHIVE') {
+      archived = archived.filter(
+        id => !ProjectHelper._objectIdEquals(id, userId)
+      )
+    } else {
+      throw new Error('Unrecognised action')
+    }
+
+    return archived
   },
 
   ensureNameIsUnique(nameList, name, suffixes, maxLength, callback) {
@@ -41,13 +93,13 @@ module.exports = ProjectHelper = {
       suffixes = []
     }
     if (callback == null) {
-      callback = function(error, name, changed) {}
+      callback = function(error, name) {}
     }
     const allNames = new Set(nameList)
     const isUnique = x => !allNames.has(x)
     // check if the supplied name is already unique
     if (isUnique(name)) {
-      return callback(null, name, false)
+      return callback(null, name)
     }
     // the name already exists, try adding the user-supplied suffixes to generate a unique name
     for (let suffix of Array.from(suffixes)) {
@@ -57,7 +109,7 @@ module.exports = ProjectHelper = {
         maxLength
       )
       if (isUnique(candidateName)) {
-        return callback(null, candidateName, true)
+        return callback(null, candidateName)
       }
     }
     // if there are no (more) suffixes, use a numeric one
@@ -67,12 +119,17 @@ module.exports = ProjectHelper = {
       maxLength
     )
     if (uniqueName != null) {
-      return callback(null, uniqueName, true)
+      return callback(null, uniqueName)
     } else {
       return callback(
         new Error(`Failed to generate a unique name for: ${name}`)
       )
     }
+  },
+
+  _objectIdEquals(firstVal, secondVal) {
+    // For use as a comparator for unionWith
+    return firstVal.toString() === secondVal.toString()
   },
 
   _addSuffixToProjectName(name, suffix, maxLength) {
@@ -112,3 +169,8 @@ module.exports = ProjectHelper = {
     return null
   }
 }
+
+ProjectHelper.promises = {
+  ensureNameIsUnique: promisify(ProjectHelper.ensureNameIsUnique)
+}
+module.exports = ProjectHelper

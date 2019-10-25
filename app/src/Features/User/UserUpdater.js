@@ -1,25 +1,10 @@
-/* eslint-disable
-    camelcase,
-    handle-callback-err,
-    max-len,
-    no-undef,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS101: Remove unnecessary use of Array.from
- * DS102: Remove unnecessary code created because of implicit returns
- * DS207: Consider shorter variations of null checks
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
-let UserUpdater
 const logger = require('logger-sharelatex')
 const mongojs = require('../../infrastructure/mongojs')
 const metrics = require('metrics-sharelatex')
 const { db } = mongojs
 const async = require('async')
 const { ObjectId } = mongojs
+const { promisify } = require('util')
 const UserGetter = require('./UserGetter')
 const {
   addAffiliation,
@@ -30,10 +15,10 @@ const EmailHelper = require('../Helpers/EmailHelper')
 const Errors = require('../Errors/Errors')
 const NewsletterManager = require('../Newsletter/NewsletterManager')
 
-module.exports = UserUpdater = {
+const UserUpdater = {
   updateUser(query, update, callback) {
     if (callback == null) {
-      callback = function(error) {}
+      callback = () => {}
     }
     if (typeof query === 'string') {
       query = { _id: ObjectId(query) }
@@ -43,7 +28,7 @@ module.exports = UserUpdater = {
       query._id = ObjectId(query._id)
     }
 
-    return db.users.update(query, update, callback)
+    db.users.update(query, update, callback)
   },
 
   //
@@ -61,12 +46,12 @@ module.exports = UserUpdater = {
     logger.log({ userId, newEmail }, 'updaing email address of user')
 
     let oldEmail = null
-    return async.series(
+    async.series(
       [
         cb =>
-          UserGetter.getUserEmail(userId, function(error, email) {
+          UserGetter.getUserEmail(userId, (error, email) => {
             oldEmail = email
-            return cb(error)
+            cb(error)
           }),
         cb => UserUpdater.addEmailAddress(userId, newEmail, cb),
         cb => UserUpdater.setDefaultEmailAddress(userId, newEmail, true, cb),
@@ -89,12 +74,12 @@ module.exports = UserUpdater = {
       return callback(new Error('invalid email'))
     }
 
-    return UserGetter.ensureUniqueEmailAddress(newEmail, error => {
+    UserGetter.ensureUniqueEmailAddress(newEmail, error => {
       if (error != null) {
         return callback(error)
       }
 
-      return addAffiliation(userId, newEmail, affiliationOptions, error => {
+      addAffiliation(userId, newEmail, affiliationOptions, error => {
         if (error != null) {
           logger.warn(
             { error },
@@ -113,12 +98,12 @@ module.exports = UserUpdater = {
             emails: { email: newEmail, createdAt: new Date(), reversedHostname }
           }
         }
-        return UserUpdater.updateUser(userId, update, function(error) {
+        UserUpdater.updateUser(userId, update, error => {
           if (error != null) {
             logger.warn({ error }, 'problem updating users emails')
             return callback(error)
           }
-          return callback()
+          callback()
         })
       })
     })
@@ -131,7 +116,7 @@ module.exports = UserUpdater = {
     if (email == null) {
       return callback(new Error('invalid email'))
     }
-    return removeAffiliation(userId, email, error => {
+    removeAffiliation(userId, email, error => {
       if (error != null) {
         logger.warn({ error }, 'problem removing affiliation')
         return callback(error)
@@ -139,7 +124,7 @@ module.exports = UserUpdater = {
 
       const query = { _id: userId, email: { $ne: email } }
       const update = { $pull: { emails: { email } } }
-      return UserUpdater.updateUser(query, update, function(error, res) {
+      UserUpdater.updateUser(query, update, (error, res) => {
         if (error != null) {
           logger.warn({ error }, 'problem removing users email')
           return callback(error)
@@ -147,7 +132,7 @@ module.exports = UserUpdater = {
         if (res.n === 0) {
           return callback(new Error('Cannot remove email'))
         }
-        return callback()
+        callback()
       })
     })
   },
@@ -188,8 +173,14 @@ module.exports = UserUpdater = {
         if (res.n === 0) {
           return callback(new Error('email update error'))
         }
-        // do not wait - this will log its own errors
-        NewsletterManager.changeEmail(oldEmail, email, () => {})
+        NewsletterManager.changeEmail(user, email, err => {
+          if (err != null) {
+            logger.warn(
+              { err, oldEmail, newEmail: email },
+              'Failed to change email in newsletter subscription'
+            )
+          }
+        })
         callback()
       })
     })
@@ -205,7 +196,7 @@ module.exports = UserUpdater = {
       return callback(new Error('invalid email'))
     }
     logger.log({ userId, email }, 'confirming user email')
-    return addAffiliation(userId, email, { confirmedAt }, error => {
+    addAffiliation(userId, email, { confirmedAt }, error => {
       if (error != null) {
         logger.warn(
           { error },
@@ -223,7 +214,7 @@ module.exports = UserUpdater = {
           'emails.$.confirmedAt': confirmedAt
         }
       }
-      return UserUpdater.updateUser(query, update, function(error, res) {
+      UserUpdater.updateUser(query, update, (error, res) => {
         if (error != null) {
           return callback(error)
         }
@@ -233,14 +224,14 @@ module.exports = UserUpdater = {
             new Errors.NotFoundError('user id and email do no match')
           )
         }
-        return FeaturesUpdater.refreshFeatures(userId, callback)
+        FeaturesUpdater.refreshFeatures(userId, callback)
       })
     })
   },
 
-  removeReconfirmFlag(user_id, callback) {
-    return UserUpdater.updateUser(
-      user_id.toString(),
+  removeReconfirmFlag(userId, callback) {
+    UserUpdater.updateUser(
+      userId.toString(),
       {
         $set: { must_reconfirm: false }
       },
@@ -258,3 +249,13 @@ module.exports = UserUpdater = {
 ].map(method =>
   metrics.timeAsyncMethod(UserUpdater, method, 'mongo.UserUpdater', logger)
 )
+
+const promises = {
+  addEmailAddress: promisify(UserUpdater.addEmailAddress),
+  confirmEmail: promisify(UserUpdater.confirmEmail),
+  updateUser: promisify(UserUpdater.updateUser)
+}
+
+UserUpdater.promises = promises
+
+module.exports = UserUpdater

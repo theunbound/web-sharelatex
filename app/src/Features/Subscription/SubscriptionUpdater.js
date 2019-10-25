@@ -1,5 +1,6 @@
+const { db } = require('../../infrastructure/mongojs')
 const async = require('async')
-const _ = require('underscore')
+const { promisifyAll } = require('../../util/promises')
 const { Subscription } = require('../../models/Subscription')
 const SubscriptionLocator = require('./SubscriptionLocator')
 const UserGetter = require('../User/UserGetter')
@@ -7,6 +8,7 @@ const PlansLocator = require('./PlansLocator')
 const logger = require('logger-sharelatex')
 const { ObjectId } = require('mongoose').Types
 const FeaturesUpdater = require('./FeaturesUpdater')
+const { DeletedSubscription } = require('../../models/DeletedSubscription')
 
 const SubscriptionUpdater = {
   /**
@@ -32,7 +34,11 @@ const SubscriptionUpdater = {
     Subscription.update(query, update, callback)
   },
 
-  syncSubscription(recurlySubscription, adminUserId, callback) {
+  syncSubscription(recurlySubscription, adminUserId, requesterData, callback) {
+    if (!callback) {
+      callback = requesterData
+      requesterData = {}
+    }
     logger.log(
       { adminUserId, recurlySubscription },
       'syncSubscription, creating new if subscription does not exist'
@@ -52,6 +58,7 @@ const SubscriptionUpdater = {
         SubscriptionUpdater._updateSubscriptionFromRecurly(
           recurlySubscription,
           subscription,
+          requesterData,
           callback
         )
       } else {
@@ -69,6 +76,7 @@ const SubscriptionUpdater = {
           SubscriptionUpdater._updateSubscriptionFromRecurly(
             recurlySubscription,
             subscription,
+            requesterData,
             callback
           )
         })
@@ -77,27 +85,18 @@ const SubscriptionUpdater = {
   },
 
   addUserToGroup(subscriptionId, userId, callback) {
-    this.addUsersToGroup(subscriptionId, [userId], callback)
+    SubscriptionUpdater.addUsersToGroup(subscriptionId, [userId], callback)
   },
 
   addUsersToGroup(subscriptionId, memberIds, callback) {
-    this.addUsersToGroupWithoutFeaturesRefresh(
+    SubscriptionUpdater.addUsersToGroupWithoutFeaturesRefresh(
       subscriptionId,
       memberIds,
       function(err) {
         if (err != null) {
           return callback(err)
         }
-
-        // Only apply features updates to users, not user stubs
-        UserGetter.getUsers(memberIds, { _id: 1 }, function(err, users) {
-          if (err != null) {
-            return callback(err)
-          }
-
-          const userIds = users.map(u => u._id.toString())
-          async.map(userIds, FeaturesUpdater.refreshFeatures, callback)
-        })
+        async.map(memberIds, FeaturesUpdater.refreshFeatures, callback)
       }
     )
   },
@@ -123,16 +122,9 @@ const SubscriptionUpdater = {
         )
         return callback(err)
       }
-      UserGetter.getUserOrUserStubById(userId, {}, function(
-        error,
-        user,
-        isStub
-      ) {
+      UserGetter.getUser(userId, function(error, user) {
         if (error) {
           return callback(error)
-        }
-        if (isStub) {
-          return callback()
         }
         FeaturesUpdater.refreshFeatures(userId, callback)
       })
@@ -171,35 +163,89 @@ const SubscriptionUpdater = {
     Subscription.deleteOne({ 'overleaf.id': v1TeamId }, callback)
   },
 
-  deleteSubscription(subscriptionId, callback) {
+  deleteSubscription(subscription, deleterData, callback) {
     if (callback == null) {
       callback = function() {}
     }
-    SubscriptionLocator.getSubscription(subscriptionId, function(
+    logger.log(
+      { subscriptionId: subscription._id },
+      'deleting subscription and downgrading users'
+    )
+    async.series(
+      [
+        cb =>
+          // 1. create deletedSubscription
+          SubscriptionUpdater._createDeletedSubscription(
+            subscription,
+            deleterData,
+            cb
+          ),
+        cb =>
+          // 2. remove subscription
+          Subscription.remove({ _id: subscription._id }, cb),
+        cb =>
+          // 3. refresh users features
+          SubscriptionUpdater._refreshUsersFeatures(subscription, cb)
+      ],
+      callback
+    )
+  },
+
+  restoreSubscription(subscriptionId, callback) {
+    SubscriptionLocator.getDeletedSubscription(subscriptionId, function(
       err,
-      subscription
+      deletedSubscription
     ) {
-      if (err != null) {
+      if (err) {
         return callback(err)
       }
-      const affectedUserIds = [subscription.admin_id].concat(
-        subscription.member_ids || []
+      let subscription = deletedSubscription.subscription
+      async.series(
+        [
+          cb =>
+            // 1. upsert subscription
+            db.subscriptions.update(
+              { _id: subscription._id },
+              subscription,
+              { upsert: true },
+              cb
+            ),
+          cb =>
+            // 2. refresh users features. Do this before removing the
+            //    subscription so the restore can be retried if this fails
+            SubscriptionUpdater._refreshUsersFeatures(subscription, cb),
+          cb =>
+            // 3. remove deleted subscription
+            DeletedSubscription.deleteOne(
+              { 'subscription._id': subscription._id },
+              callback
+            )
+        ],
+        callback
       )
-      logger.log(
-        { subscriptionId, affectedUserIds },
-        'deleting subscription and downgrading users'
-      )
-      Subscription.remove({ _id: ObjectId(subscriptionId) }, function(err) {
-        if (err != null) {
-          return callback(err)
-        }
-        async.mapSeries(
-          affectedUserIds,
-          FeaturesUpdater.refreshFeatures,
-          callback
-        )
-      })
     })
+  },
+
+  _refreshUsersFeatures(subscription, callback) {
+    const userIds = [subscription.admin_id].concat(
+      subscription.member_ids || []
+    )
+    async.mapSeries(userIds, FeaturesUpdater.refreshFeatures, callback)
+  },
+
+  _createDeletedSubscription(subscription, deleterData, callback) {
+    subscription.teamInvites = []
+    subscription.invited_emails = []
+    const filter = { 'subscription._id': subscription._id }
+    const data = {
+      deleterData: {
+        deleterId: deleterData.id,
+        deleterIpAddress: deleterData.ip
+      },
+      subscription: subscription
+    }
+    const options = { upsert: true, new: true, setDefaultsOnInsert: true }
+    DeletedSubscription.findOneAndUpdate(filter, data, options, callback)
   },
 
   _createNewSubscription(adminUserId, callback) {
@@ -211,10 +257,19 @@ const SubscriptionUpdater = {
     subscription.save(err => callback(err, subscription))
   },
 
-  _updateSubscriptionFromRecurly(recurlySubscription, subscription, callback) {
+  _updateSubscriptionFromRecurly(
+    recurlySubscription,
+    subscription,
+    requesterData,
+    callback
+  ) {
     logger.log({ recurlySubscription, subscription }, 'updaing subscription')
     if (recurlySubscription.state === 'expired') {
-      return SubscriptionUpdater.deleteSubscription(subscription._id, callback)
+      return SubscriptionUpdater.deleteSubscription(
+        subscription,
+        requesterData,
+        callback
+      )
     }
     subscription.recurlySubscription_id = recurlySubscription.uuid
     subscription.planCode = recurlySubscription.plan.plan_code
@@ -228,14 +283,14 @@ const SubscriptionUpdater = {
       subscription.groupPlan = true
       subscription.membersLimit = plan.membersLimit
     }
-    subscription.save(function() {
-      const allIds = _.union(subscription.member_ids, [subscription.admin_id])
-      const jobs = allIds.map(userId => cb =>
-        FeaturesUpdater.refreshFeatures(userId, cb)
-      )
-      async.series(jobs, callback)
+    subscription.save(function(error) {
+      if (error) {
+        return callback(error)
+      }
+      SubscriptionUpdater._refreshUsersFeatures(subscription, callback)
     })
   }
 }
 
+SubscriptionUpdater.promises = promisifyAll(SubscriptionUpdater)
 module.exports = SubscriptionUpdater

@@ -1,4 +1,3 @@
-/* global _ */
 /* eslint-disable
     camelcase,
     max-len
@@ -46,10 +45,10 @@ define([
   const { Vim } = ace.require('ace/keyboard/vim')
   const SearchBox = ace.require('ace/ext/searchbox')
 
-  // set the path for ace workers if using a CDN (from editor.pug)
-  if (window.aceWorkerPath !== '') {
+  // Set the base path that ace will fetch modes/snippets/workers from
+  if (window.aceBasePath !== '') {
     syntaxValidationEnabled = true
-    ace.config.set('workerPath', `${window.aceWorkerPath}`)
+    ace.config.set('basePath', `${window.aceBasePath}`)
   } else {
     syntaxValidationEnabled = false
   }
@@ -71,7 +70,7 @@ define([
     $timeout,
     $compile,
     $rootScope,
-    event_tracking,
+    eventTracking,
     localStorage,
     $cacheFactory,
     metadata,
@@ -576,7 +575,7 @@ define([
           updateCount++
 
           if (updateCount === 100) {
-            event_tracking.send('editor-interaction', 'multi-doc-update')
+            eventTracking.send('editor-interaction', 'multi-doc-update')
           }
           return scope.$emit(`${scope.name}:change`)
         }
@@ -802,16 +801,16 @@ define([
           // deletes and then inserts document content
           session.setAnnotations(scope.annotations)
 
-          session.on('changeScrollTop', event_tracking.editingSessionHeartbeat)
+          session.on('changeScrollTop', eventTracking.editingSessionHeartbeat)
 
           angular
             .element($window)
-            .on('click', event_tracking.editingSessionHeartbeat)
+            .on('click', eventTracking.editingSessionHeartbeat)
 
           scope.$on('$destroy', () =>
             angular
               .element($window)
-              .off('click', event_tracking.editingSessionHeartbeat)
+              .off('click', eventTracking.editingSessionHeartbeat)
           )
 
           if (scope.eventsBridge != null) {

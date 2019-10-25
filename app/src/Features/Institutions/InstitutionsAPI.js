@@ -11,14 +11,32 @@
  * DS207: Consider shorter variations of null checks
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
-let InstitutionsAPI
 const logger = require('logger-sharelatex')
 const metrics = require('metrics-sharelatex')
 const settings = require('settings-sharelatex')
 const request = require('request')
+const { promisifyAll } = require('../../util/promises')
 const NotificationsBuilder = require('../Notifications/NotificationsBuilder')
+const V1Api = require('../V1/V1Api')
 
-module.exports = InstitutionsAPI = {
+function getInstitutionViaDomain(domain) {
+  return new Promise(function(resolve, reject) {
+    V1Api.request(
+      {
+        timeout: 20 * 1000,
+        uri: `api/v1/sharelatex/university_saml?hostname=${domain}`
+      },
+      function(error, response, body) {
+        if (error) {
+          reject(error)
+        }
+        resolve(body)
+      }
+    )
+  })
+}
+
+const InstitutionsAPI = {
   getInstitutionAffiliations(institutionId, callback) {
     if (callback == null) {
       callback = function(error, body) {}
@@ -32,6 +50,8 @@ module.exports = InstitutionsAPI = {
       (error, body) => callback(error, body || [])
     )
   },
+
+  getInstitutionViaDomain,
 
   getInstitutionLicences(institutionId, startDate, endDate, lag, callback) {
     if (callback == null) {
@@ -157,6 +177,30 @@ module.exports = InstitutionsAPI = {
       },
       callback
     )
+  },
+
+  addEntitlement(userId, email, callback) {
+    return makeAffiliationRequest(
+      {
+        method: 'POST',
+        path: `/api/v2/users/${userId}/affiliations/add_entitlement`,
+        body: { email },
+        defaultErrorMessage: "Couldn't add entitlement"
+      },
+      callback
+    )
+  },
+
+  removeEntitlement(userId, email, callback) {
+    return makeAffiliationRequest(
+      {
+        method: 'POST',
+        path: `/api/v2/users/${userId}/affiliations/remove_entitlement`,
+        body: { email },
+        defaultErrorMessage: "Couldn't remove entitlement"
+      },
+      callback
+    )
   }
 }
 
@@ -223,3 +267,6 @@ var makeAffiliationRequest = function(requestOptions, callback) {
     logger
   )
 )
+
+InstitutionsAPI.promises = promisifyAll(InstitutionsAPI)
+module.exports = InstitutionsAPI

@@ -43,7 +43,6 @@ define([
   'ide/directives/layout',
   'ide/directives/validFile',
   'ide/services/ide',
-  '__IDE_CLIENTSIDE_INCLUDES__',
   'analytics/AbTestingManager',
   'directives/focus',
   'directives/fineUpload',
@@ -59,7 +58,9 @@ define([
   'services/wait-for',
   'filters/formatDate',
   'main/event',
-  'main/account-upgrade'
+  'main/account-upgrade',
+  'main/exposed-settings',
+  '../../modules/modules-ide.js'
 ], function(
   App,
   FileTreeManager,
@@ -81,7 +82,7 @@ define([
     $timeout,
     ide,
     localStorage,
-    event_tracking,
+    eventTracking,
     metadata,
     $q,
     CobrandingDataService
@@ -125,6 +126,7 @@ define([
     $scope.settings = window.userSettings
     $scope.anonymous = window.anonymous
     $scope.isTokenMember = window.isTokenMember
+    $scope.isRestrictedTokenMember = window.isRestrictedTokenMember
 
     $scope.cobranding = {
       isProjectCobranded: CobrandingDataService.isProjectCobranded(),
@@ -141,7 +143,7 @@ define([
         return
       }
       $scope.ui.reviewPanelOpen = !$scope.ui.reviewPanelOpen
-      return event_tracking.sendMB('rp-toggle-panel', {
+      return eventTracking.sendMB('rp-toggle-panel', {
         value: $scope.ui.reviewPanelOpen
       })
     }
@@ -162,24 +164,24 @@ define([
         $scope.$broadcast('layout:flat-screen:toggle')
       }
       if (newView != null && newView !== 'editor' && newView !== 'pdf') {
-        return event_tracking.sendMBOnce(`ide-open-view-${newView}-once`)
+        return eventTracking.sendMBOnce(`ide-open-view-${newView}-once`)
       }
     })
 
     $scope.$watch('ui.chatOpen', function(isOpen) {
       if (isOpen) {
-        return event_tracking.sendMBOnce('ide-open-chat-once')
+        return eventTracking.sendMBOnce('ide-open-chat-once')
       }
     })
 
     $scope.$watch('ui.leftMenuShown', function(isOpen) {
       if (isOpen) {
-        return event_tracking.sendMBOnce('ide-open-left-menu-once')
+        return eventTracking.sendMBOnce('ide-open-left-menu-once')
       }
     })
 
     $scope.trackHover = feature =>
-      event_tracking.sendMBOnce(`ide-hover-${feature}-once`)
+      eventTracking.sendMBOnce(`ide-hover-${feature}-once`)
     // End of tracking code.
 
     window._ide = ide
@@ -253,7 +255,7 @@ If the project has been renamed please look in your project list for a new proje
       return (_loaded = true)
     })
 
-    $scope.$on('cursor:editor:update', event_tracking.editingSessionHeartbeat)
+    $scope.$on('cursor:editor:update', eventTracking.editingSessionHeartbeat)
 
     const DARK_THEMES = [
       'ambiance',

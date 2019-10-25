@@ -36,6 +36,7 @@ module.exports = settings =
 			host: process.env['REDIS_HOST'] || "localhost"
 			port: process.env['REDIS_PORT'] || "6379"
 			password: process.env["REDIS_PASSWORD"] or ""
+			maxRetriesPerRequest: parseInt(process.env["REDIS_MAX_RETRIES_PER_REQUEST"] || '20')
 
 		# websessions:
 		# 	cluster: [
@@ -71,6 +72,7 @@ module.exports = settings =
 			host: process.env['REDIS_HOST'] || "localhost"
 			port: process.env['REDIS_PORT'] || "6379"
 			password: process.env["REDIS_PASSWORD"] or ""
+			maxRetriesPerRequest: parseInt(process.env["REDIS_MAX_RETRIES_PER_REQUEST"] || '20')
 
 	# Service locations
 	# -----------------
@@ -199,6 +201,7 @@ module.exports = settings =
 	# Same, but with http auth credentials.
 	httpAuthSiteUrl: "http://#{httpAuthUser}:#{httpAuthPass}@#{siteUrl}"
 
+	robotsNoindex: (process.env['ROBOTS_NOINDEX'] == "true") or false
 
 	maxEntitiesPerProject: 2000
 	
@@ -503,7 +506,7 @@ module.exports = settings =
 	redirects:
 		"/templates/index": "/templates/"
 
-	reloadModuleViewsOnEachRequest: process.env['NODE_ENV'] != 'production'
+	reloadModuleViewsOnEachRequest: process.env['NODE_ENV'] == 'development'
 
 	domainLicences: [
 
@@ -555,6 +558,8 @@ module.exports = settings =
 	# imageRoot: "<DOCKER REPOSITORY ROOT>" # without any trailing slash
 	
 	compileBodySizeLimitMb: process.env['COMPILE_BODY_SIZE_LIMIT_MB'] or 5
+
+	validRootDocExtensions: ['tex', 'Rtex', 'ltx']
 
 	# allowedImageNames: [
 	# 	{imageName: 'texlive-full:2017.1', imageDesc: 'TeXLive 2017'}
