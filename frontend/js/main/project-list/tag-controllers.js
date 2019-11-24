@@ -11,9 +11,9 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
       })
 
     $scope.selectTag = function(tag) {
-      tag.selected = !tag.selected
-      if ( $scope.tags.some( t => t.selected ) ) $scope.setFilter('tag')
-      else $scope.filterProjects()
+      $scope._clearTags()
+      tag.selected = true
+      $scope.setFilter('tag')
     }
 
     $scope.selectUntagged = function() {
