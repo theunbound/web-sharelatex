@@ -404,6 +404,7 @@ const ProjectController = {
     const timer = new metrics.Timer('project-list')
     const userId = AuthenticationController.getLoggedInUserId(req)
     const currentUser = AuthenticationController.getSessionUser(req)
+    let noV1Connection = false
     async.parallel(
       {
         tags(cb) {
@@ -429,7 +430,8 @@ const ProjectController = {
               projects = []
             }
             if (error != null && error instanceof V1ConnectionError) {
-              return cb(null, { projects: [], tags: [], noConnection: true })
+              noV1Connection = true
+              return cb(null, null)
             }
             cb(error, projects[0])
           })
@@ -439,6 +441,7 @@ const ProjectController = {
             currentUser,
             (error, hasPaidSubscription) => {
               if (error != null && error instanceof V1ConnectionError) {
+                noV1Connection = true
                 return cb(null, true)
               }
               cb(error, hasPaidSubscription)
@@ -456,7 +459,13 @@ const ProjectController = {
           if (!Features.hasFeature('affiliations')) {
             return cb(null, null)
           }
-          getUserAffiliations(userId, cb)
+          getUserAffiliations(userId, (error, affiliations) => {
+            if (error && error instanceof V1ConnectionError) {
+              noV1Connection = true
+              return cb(null, [])
+            }
+            cb(error, affiliations)
+          })
         }
       },
       (err, results) => {
@@ -464,11 +473,16 @@ const ProjectController = {
           logger.warn({ err }, 'error getting data for project list page')
           return next(err)
         }
+        if (noV1Connection) {
+          results.v1Projects = results.v1Projects || { projects: [], tags: [] }
+          results.v1Projects.noConnection = true
+        }
         const { notifications, user, userAffiliations } = results
         const v1Tags =
           (results.v1Projects != null ? results.v1Projects.tags : undefined) ||
           []
         const tags = results.tags.concat(v1Tags)
+        const notificationsInstitution = []
         for (const notification of notifications) {
           notification.html = req.i18n.translate(
             notification.templateKey,
@@ -500,7 +514,7 @@ const ProjectController = {
                   affiliation.institution.id.toString()
                 ) === -1
               ) {
-                notifications.push({
+                notificationsInstitution.push({
                   email: affiliation.email,
                   institutionId: affiliation.institution.id,
                   institutionName: affiliation.institution.name,
@@ -513,7 +527,7 @@ const ProjectController = {
           if (samlSession) {
             // Notification: After SSO Linked
             if (samlSession.linked) {
-              notifications.push({
+              notificationsInstitution.push({
                 email: samlSession.institutionEmail,
                 institutionName: samlSession.linked.universityName,
                 templateKey: 'notification_institution_sso_linked'
@@ -523,8 +537,12 @@ const ProjectController = {
             // Notification: After SSO Linked or Logging in
             // The requested email does not match primary email returned from
             // the institution
-            if (samlSession.emailNonCanonical) {
-              notifications.push({
+            if (
+              samlSession.requestedEmail &&
+              samlSession.emailNonCanonical &&
+              !samlSession.linkedToAnother
+            ) {
+              notificationsInstitution.push({
                 institutionEmail: samlSession.emailNonCanonical,
                 requestedEmail: samlSession.requestedEmail,
                 templateKey: 'notification_institution_sso_non_canonical'
@@ -532,10 +550,24 @@ const ProjectController = {
             }
 
             // Notification: Tried to register, but account already existed
-            if (samlSession.registerIntercept) {
-              notifications.push({
+            // registerIntercept is set before the institution callback.
+            // institutionEmail is set after institution callback.
+            // Check for both in case SSO flow was abandoned
+            if (
+              samlSession.registerIntercept &&
+              samlSession.institutionEmail &&
+              !samlSession.linkedToAnother
+            ) {
+              notificationsInstitution.push({
                 email: samlSession.institutionEmail,
                 templateKey: 'notification_institution_sso_already_registered'
+              })
+            }
+
+            // Notification: Already linked to another account
+            if (samlSession.linkedToAnother) {
+              notificationsInstitution.push({
+                templateKey: 'notification_institution_sso_linked_by_another'
               })
             }
           }
@@ -569,6 +601,7 @@ const ProjectController = {
             projects,
             tags,
             notifications: notifications || [],
+            notificationsInstitution,
             portalTemplates,
             user,
             userAffiliations,
@@ -836,8 +869,6 @@ const ProjectController = {
                 project.overleaf &&
                 project.overleaf.history &&
                 Boolean(project.overleaf.history.display),
-              showTestControls:
-                (req.query && req.query.tc === 'true') || user.isAdmin,
               brandVariation,
               allowedImageNames: Settings.allowedImageNames || [],
               gitBridgePublicBaseUrl: Settings.gitBridgePublicBaseUrl
@@ -1033,8 +1064,10 @@ const ProjectController = {
       v1ProjectData = {}
     }
     const warnings = []
-    if (v1ProjectData.noConnection && Settings.overleaf) {
-      warnings.push('No V1 Connection')
+    if (v1ProjectData.noConnection) {
+      warnings.push(
+        'Error accessing Overleaf V1. Some of your projects or features may be missing.'
+      )
     }
     if (v1ProjectData.hasHiddenV1Projects) {
       warnings.push(
@@ -1091,7 +1124,11 @@ var defaultSettingsForAnonymousUser = userId => ({
 var THEME_LIST = []
 function generateThemeList() {
   const files = fs.readdirSync(
-    Path.join(__dirname, '/../../../../public/js/', PackageVersions.lib('ace'))
+    Path.join(
+      __dirname,
+      '/../../../../frontend/js/vendor/',
+      PackageVersions.lib('ace')
+    )
   )
   const result = []
   for (let file of files) {

@@ -72,8 +72,8 @@ describe('EmailSender', function() {
 
     it('should return a non-specific error', async function() {
       this.sesClient.sendMail.rejects(new Error('boom'))
-      expect(this.EmailSender.promises.sendEmail({})).to.be.rejectedWith(
-        'Error: Cannot send email'
+      await expect(this.EmailSender.promises.sendEmail({})).to.be.rejectedWith(
+        'error sending message'
       )
     })
 
@@ -117,7 +117,7 @@ describe('EmailSender', function() {
     it('should not check the rate limiter when there is no sendingUser_id', async function() {
       this.EmailSender.sendEmail(this.opts, () => {
         expect(this.sesClient.sendMail).to.have.been.called
-        expect(this.RateLimiter.addCount).not.to.have.been.called
+        expect(this.RateLimiter.promises.addCount).not.to.have.been.called
       })
     })
 

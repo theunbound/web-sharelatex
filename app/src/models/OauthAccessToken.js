@@ -1,7 +1,4 @@
-// TODO: This file was created by bulk-decaffeinate.
-// Sanity-check the conversion and remove this comment.
-const mongoose = require('mongoose')
-const Settings = require('settings-sharelatex')
+const mongoose = require('../infrastructure/Mongoose')
 
 const { Schema } = mongoose
 const { ObjectId } = Schema
@@ -21,13 +18,9 @@ const OauthAccessTokenSchema = new Schema(
   }
 )
 
-const conn = mongoose.createConnection(Settings.mongo.url, {
-  server: { poolSize: Settings.mongo.poolSize || 10 },
-  config: { autoIndex: false }
-})
+exports.OauthAccessToken = mongoose.model(
+  'OauthAccessToken',
+  OauthAccessTokenSchema
+)
 
-const OauthAccessToken = conn.model('OauthAccessToken', OauthAccessTokenSchema)
-
-mongoose.model('OauthAccessToken', OauthAccessTokenSchema)
-exports.OauthAccessToken = OauthAccessToken
 exports.OauthAccessTokenSchema = OauthAccessTokenSchema

@@ -17,24 +17,7 @@ const settings = require('settings-sharelatex')
 const request = require('request')
 const { promisifyAll } = require('../../util/promises')
 const NotificationsBuilder = require('../Notifications/NotificationsBuilder')
-const V1Api = require('../V1/V1Api')
-
-function getInstitutionViaDomain(domain) {
-  return new Promise(function(resolve, reject) {
-    V1Api.request(
-      {
-        timeout: 20 * 1000,
-        uri: `api/v1/sharelatex/university_saml?hostname=${domain}`
-      },
-      function(error, response, body) {
-        if (error) {
-          reject(error)
-        }
-        resolve(body)
-      }
-    )
-  })
-}
+const { V1ConnectionError } = require('../Errors/Errors')
 
 const InstitutionsAPI = {
   getInstitutionAffiliations(institutionId, callback) {
@@ -50,8 +33,6 @@ const InstitutionsAPI = {
       (error, body) => callback(error, body || [])
     )
   },
-
-  getInstitutionViaDomain,
 
   getInstitutionLicences(institutionId, startDate, endDate, lag, callback) {
     if (callback == null) {
@@ -225,7 +206,22 @@ var makeAffiliationRequest = function(requestOptions, callback) {
     },
     function(error, response, body) {
       if (error != null) {
-        return callback(error)
+        return callback(
+          new V1ConnectionError('error getting affiliations from v1').withCause(
+            error
+          )
+        )
+      }
+      if (response && response.statusCode >= 500) {
+        return callback(
+          new V1ConnectionError({
+            message: 'error getting affiliations from v1',
+            info: {
+              status: response.statusCode,
+              body: body
+            }
+          })
+        )
       }
       let isSuccess = response.statusCode >= 200 && response.statusCode < 300
       if (!isSuccess) {

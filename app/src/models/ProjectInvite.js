@@ -1,10 +1,4 @@
-/* eslint-disable
-    max-len,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-const mongoose = require('mongoose')
-const Settings = require('settings-sharelatex')
+const mongoose = require('../infrastructure/Mongoose')
 
 const { Schema } = mongoose
 const { ObjectId } = Schema
@@ -36,14 +30,6 @@ const ProjectInviteSchema = new Schema(
   }
 )
 
-const conn = mongoose.createConnection(Settings.mongo.url, {
-  server: { poolSize: Settings.mongo.poolSize || 10 },
-  config: { autoIndex: false }
-})
-
-const ProjectInvite = conn.model('ProjectInvite', ProjectInviteSchema)
-
-mongoose.model('ProjectInvite', ProjectInviteSchema)
-exports.ProjectInvite = ProjectInvite
+exports.ProjectInvite = mongoose.model('ProjectInvite', ProjectInviteSchema)
 exports.ProjectInviteSchema = ProjectInviteSchema
 exports.EXPIRY_IN_SECONDS = EXPIRY_IN_SECONDS

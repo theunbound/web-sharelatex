@@ -1,5 +1,5 @@
 node_modules
 modules/**/scripts
+frontend/js/vendor
 public/js
 public/minjs
-modules/**/public/js

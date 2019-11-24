@@ -37,7 +37,8 @@ describe('DocumentController', function() {
         '../Project/ProjectGetter': (this.ProjectGetter = {}),
         '../Project/ProjectLocator': (this.ProjectLocator = {}),
         '../Project/ProjectEntityHandler': (this.ProjectEntityHandler = {}),
-        '../Project/ProjectEntityUpdateHandler': (this.ProjectEntityUpdateHandler = {})
+        '../Project/ProjectEntityUpdateHandler': (this.ProjectEntityUpdateHandler = {}),
+        '../Errors/Errors': Errors
       }
     })
     this.res = new MockResponse()
@@ -142,7 +143,7 @@ describe('DocumentController', function() {
 
         it('should call next with the NotFoundError', function() {
           return this.next
-            .calledWith(new Errors.NotFoundError('not found'))
+            .calledWith(sinon.match.instanceOf(Errors.NotFoundError))
             .should.equal(true)
         })
       })
@@ -152,9 +153,16 @@ describe('DocumentController', function() {
       beforeEach(function() {
         this.doc = { _id: this.doc_id }
         this.projectHistoryId = 1234
+        this.projectHistoryDisplay = true
+        this.projectHistoryType = 'project-history'
         this.project = {
           _id: this.project_id,
-          overleaf: { history: { id: this.projectHistoryId } }
+          overleaf: {
+            history: {
+              id: this.projectHistoryId,
+              display: this.projectHistoryDisplay
+            }
+          }
         }
         this.ProjectGetter.getProject = sinon
           .stub()
@@ -179,7 +187,7 @@ describe('DocumentController', function() {
         )
       })
 
-      it('should return the history id to the client as JSON', function() {
+      it('should return the history id and display setting to the client as JSON', function() {
         this.res.type.should.equal('application/json')
         return this.res.body.should.equal(
           JSON.stringify({
@@ -187,7 +195,8 @@ describe('DocumentController', function() {
             version: this.version,
             ranges: this.ranges,
             pathname: this.pathname,
-            projectHistoryId: this.projectHistoryId
+            projectHistoryId: this.projectHistoryId,
+            projectHistoryType: this.projectHistoryType
           })
         )
       })
@@ -267,7 +276,7 @@ describe('DocumentController', function() {
 
       it('should call next with the NotFoundError', function() {
         return this.next
-          .calledWith(new Errors.NotFoundError('not found'))
+          .calledWith(sinon.match.instanceOf(Errors.NotFoundError))
           .should.equal(true)
       })
     })

@@ -1,13 +1,6 @@
-/* eslint-disable
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-const mongoose = require('mongoose')
-const Settings = require('settings-sharelatex')
+const mongoose = require('../infrastructure/Mongoose')
 
 const { Schema } = mongoose
-const { ObjectId } = Schema
 
 const TeamInviteSchema = new Schema({
   email: { type: String, required: true },
@@ -16,6 +9,5 @@ const TeamInviteSchema = new Schema({
   sentAt: { type: Date }
 })
 
-mongoose.model('TeamInvite', TeamInviteSchema)
-exports.TeamInvite = mongoose.model('TeamInvite')
+exports.TeamInvite = mongoose.model('TeamInvite', TeamInviteSchema)
 exports.TeamInviteSchema = TeamInviteSchema

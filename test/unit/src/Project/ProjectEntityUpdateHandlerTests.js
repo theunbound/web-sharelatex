@@ -134,7 +134,7 @@ describe('ProjectEntityUpdateHandler', function() {
       this.oldFileRef = { name: this.fileName, _id: 'oldFileRef' }
       this.ProjectEntityMongoUpdateHandler._confirmFolder = sinon
         .stub()
-        .yields(folder_id)
+        .returns(folder_id)
       this.ProjectEntityMongoUpdateHandler._putElement = sinon
         .stub()
         .yields(null, { path: { fileSystem: this.fileSystemPath } })
@@ -221,7 +221,7 @@ describe('ProjectEntityUpdateHandler', function() {
       }
       this.ProjectEntityMongoUpdateHandler._confirmFolder = sinon
         .stub()
-        .yields(folder_id)
+        .returns(folder_id)
       this.ProjectEntityMongoUpdateHandler._putElement = sinon
         .stub()
         .yields(null, { path: { fileSystem: this.fileSystemPath } })
@@ -453,8 +453,8 @@ describe('ProjectEntityUpdateHandler', function() {
         return this.logger.warn
           .calledWith(
             {
-              project_id,
-              doc_id,
+              projectId: project_id,
+              docId: doc_id,
               lines: this.docLines
             },
             'doc not found while updating doc lines'
@@ -464,7 +464,7 @@ describe('ProjectEntityUpdateHandler', function() {
 
       it('should return a not found error', function() {
         return this.callback
-          .calledWith(new Errors.NotFoundError())
+          .calledWith(sinon.match.instanceOf(Errors.NotFoundError))
           .should.equal(true)
       })
     })
@@ -486,7 +486,7 @@ describe('ProjectEntityUpdateHandler', function() {
 
       it('should return a not found error', function() {
         return this.callback
-          .calledWith(new Errors.NotFoundError())
+          .calledWith(sinon.match.instanceOf(Errors.NotFoundError))
           .should.equal(true)
       })
     })
@@ -504,7 +504,11 @@ describe('ProjectEntityUpdateHandler', function() {
         .stub()
         .yields(null, `/main.tex`)
 
-      this.ProjectEntityUpdateHandler.setRootDoc(project_id, this.rootDoc_id)
+      this.ProjectEntityUpdateHandler.setRootDoc(
+        project_id,
+        this.rootDoc_id,
+        () => {}
+      )
       return this.ProjectModel.update
         .calledWith({ _id: project_id }, { rootDoc_id: this.rootDoc_id })
         .should.equal(true)
@@ -516,7 +520,11 @@ describe('ProjectEntityUpdateHandler', function() {
         .stub()
         .yields(Errors.NotFoundError)
 
-      this.ProjectEntityUpdateHandler.setRootDoc(project_id, this.rootDoc_id)
+      this.ProjectEntityUpdateHandler.setRootDoc(
+        project_id,
+        this.rootDoc_id,
+        () => {}
+      )
       return this.ProjectModel.update
         .calledWith({ _id: project_id }, { rootDoc_id: this.rootDoc_id })
         .should.equal(false)
@@ -554,12 +562,12 @@ describe('ProjectEntityUpdateHandler', function() {
       beforeEach(function() {
         this.path = '/path/to/doc'
 
-        this.newDoc = {
+        this.newDoc = new this.DocModel({
           name: this.docName,
           lines: undefined,
           _id: doc_id,
           rev: 0
-        }
+        })
         this.DocstoreManager.updateDoc = sinon
           .stub()
           .yields(null, false, (this.rev = 5))
@@ -591,7 +599,7 @@ describe('ProjectEntityUpdateHandler', function() {
             docLines: this.docLines.join('\n')
           }
         ]
-        return this.DocumentUpdaterHandler.updateProjectStructure
+        this.DocumentUpdaterHandler.updateProjectStructure
           .calledWith(project_id, projectHistoryId, userId, {
             newDocs,
             newProject: this.project
@@ -1451,7 +1459,7 @@ describe('ProjectEntityUpdateHandler', function() {
 
       it('returns an error', function() {
         return this.callback
-          .calledWith(new Errors.NotFoundError())
+          .calledWith(sinon.match.instanceOf(Errors.NotFoundError))
           .should.equal(true)
       })
     })
@@ -1708,10 +1716,16 @@ describe('ProjectEntityUpdateHandler', function() {
       })
 
       it('should return an error', function() {
-        const error = new Errors.ProjectHistoryDisabledError(
-          `project history not enabled for ${project_id}`
+        expect(this.callback).to.have.been.calledWith(
+          sinon.match
+            .instanceOf(Errors.ProjectHistoryDisabledError)
+            .and(
+              sinon.match.has(
+                'message',
+                `project history not enabled for ${project_id}`
+              )
+            )
         )
-        return this.callback.calledWith(error).should.equal(true)
       })
     })
 
@@ -1727,10 +1741,16 @@ describe('ProjectEntityUpdateHandler', function() {
       })
 
       it('should return an error', function() {
-        const error = new Errors.ProjectHistoryDisabledError(
-          `project history not enabled for ${project_id}`
+        expect(this.callback).to.have.been.calledWith(
+          sinon.match
+            .instanceOf(Errors.ProjectHistoryDisabledError)
+            .and(
+              sinon.match.has(
+                'message',
+                `project history not enabled for ${project_id}`
+              )
+            )
         )
-        return this.callback.calledWith(error).should.equal(true)
       })
     })
 

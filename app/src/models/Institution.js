@@ -1,16 +1,4 @@
-/* eslint-disable
-    handle-callback-err,
-    max-len,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS102: Remove unnecessary code created because of implicit returns
- * DS207: Consider shorter variations of null checks
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
-const mongoose = require('mongoose')
+const mongoose = require('../infrastructure/Mongoose')
 const { Schema } = mongoose
 const { ObjectId } = Schema
 const settings = require('settings-sharelatex')
@@ -28,11 +16,8 @@ const InstitutionSchema = new Schema({
 
 // fetch institution's data from v1 API. Errors are ignored
 InstitutionSchema.method('fetchV1Data', function(callback) {
-  if (callback == null) {
-    callback = function(error, institution) {}
-  }
   const url = `${settings.apis.v1.url}/universities/list/${this.v1Id}`
-  return request.get(url, (error, response, body) => {
+  request.get(url, (error, response, body) => {
     let parsedBody
     try {
       parsedBody = JSON.parse(body)
@@ -48,15 +33,9 @@ InstitutionSchema.method('fetchV1Data', function(callback) {
     this.countryCode = parsedBody != null ? parsedBody.country_code : undefined
     this.departments = parsedBody != null ? parsedBody.departments : undefined
     this.portalSlug = parsedBody != null ? parsedBody.portal_slug : undefined
-    return callback(null, this)
+    callback(null, this)
   })
 })
 
-const conn = mongoose.createConnection(settings.mongo.url, {
-  server: { poolSize: settings.mongo.poolSize || 10 },
-  config: { autoIndex: false }
-})
-
-const Institution = conn.model('Institution', InstitutionSchema)
-exports.Institution = Institution
+exports.Institution = mongoose.model('Institution', InstitutionSchema)
 exports.InstitutionSchema = InstitutionSchema

@@ -80,8 +80,7 @@ const UserPagesController = {
     }
     res.render('user/login', {
       title: 'login',
-      email: req.query.email,
-      samlBeta: req.session.samlBeta
+      email: req.query.email
     })
   },
 
@@ -125,10 +124,17 @@ const UserPagesController = {
         institutionLinked
       )
     }
-    const institutionNotLinked = _.get(req.session, ['saml', 'notLinked'])
+    const institutionLinkedToAnother = _.get(req.session, [
+      'saml',
+      'linkedToAnother'
+    ])
     const institutionEmailNonCanonical = _.get(req.session, [
       'saml',
       'emailNonCanonical'
+    ])
+    const institutionRequestedEmail = _.get(req.session, [
+      'saml',
+      'requestedEmail'
     ])
     delete req.session.saml
     logger.log({ user: userId }, 'loading settings page')
@@ -158,8 +164,11 @@ const UserPagesController = {
         ),
         oauthUseV2: Settings.oauthUseV2 || false,
         institutionLinked,
-        institutionNotLinked,
-        institutionEmailNonCanonical,
+        institutionLinkedToAnother,
+        institutionEmailNonCanonical:
+          institutionEmailNonCanonical && institutionRequestedEmail
+            ? institutionEmailNonCanonical
+            : undefined,
         samlBeta: req.session.samlBeta,
         ssoError: ssoError,
         thirdPartyIds: UserPagesController._restructureThirdPartyIds(user)

@@ -1,13 +1,6 @@
-/* eslint-disable
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-const mongoose = require('mongoose')
-const Settings = require('settings-sharelatex')
+const mongoose = require('../infrastructure/Mongoose')
 
 const { Schema } = mongoose
-const { ObjectId } = Schema
 
 const FileSchema = new Schema({
   name: {
@@ -27,6 +20,5 @@ const FileSchema = new Schema({
   }
 })
 
-mongoose.model('File', FileSchema)
-exports.File = mongoose.model('File')
+exports.File = mongoose.model('File', FileSchema)
 exports.FileSchema = FileSchema

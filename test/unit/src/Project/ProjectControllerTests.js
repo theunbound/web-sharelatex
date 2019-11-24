@@ -520,6 +520,48 @@ describe('ProjectController', function() {
       this.ProjectController.projectListPage(this.req, this.res)
     })
 
+    describe('when there is a v1 connection error', function() {
+      beforeEach(function() {
+        this.Features.hasFeature = sinon
+          .stub()
+          .withArgs('overleaf-integration')
+          .returns(true)
+        this.connectionWarning =
+          'Error accessing Overleaf V1. Some of your projects or features may be missing.'
+      })
+
+      it('should show a warning when there is an error getting v1 projects', function(done) {
+        this.Modules.hooks.fire
+          .withArgs('findAllV1Projects', this.user._id)
+          .yields(new Errors.V1ConnectionError('error'))
+        this.res.render = (pageName, opts) => {
+          expect(opts.warnings).to.contain(this.connectionWarning)
+          done()
+        }
+        this.ProjectController.projectListPage(this.req, this.res)
+      })
+
+      it('should show a warning when there is an error getting subscriptions from v1', function(done) {
+        this.LimitationsManager.hasPaidSubscription.yields(
+          new Errors.V1ConnectionError('error')
+        )
+        this.res.render = (pageName, opts) => {
+          expect(opts.warnings).to.contain(this.connectionWarning)
+          done()
+        }
+        this.ProjectController.projectListPage(this.req, this.res)
+      })
+
+      it('should show a warning when there is an error getting affiliations from v1', function(done) {
+        this.getUserAffiliations.yields(new Errors.V1ConnectionError('error'))
+        this.res.render = (pageName, opts) => {
+          expect(opts.warnings).to.contain(this.connectionWarning)
+          done()
+        }
+        this.ProjectController.projectListPage(this.req, this.res)
+      })
+    })
+
     describe('front widget', function(done) {
       beforeEach(function() {
         this.settings.overleaf = {
@@ -645,7 +687,7 @@ describe('ProjectController', function() {
       })
       it('should show institution SSO available notification', function() {
         this.res.render = (pageName, opts) => {
-          expect(opts.notifications).to.deep.include({
+          expect(opts.notificationsInstitution).to.deep.include({
             email: 'test@overleaf.com',
             institutionId: 1,
             institutionName: 'Overleaf',
@@ -663,7 +705,7 @@ describe('ProjectController', function() {
           }
         }
         this.res.render = (pageName, opts) => {
-          expect(opts.notifications).to.deep.include({
+          expect(opts.notificationsInstitution).to.deep.include({
             email: this.institutionEmail,
             institutionName: this.institutionName,
             templateKey: 'notification_institution_sso_linked'
@@ -675,7 +717,7 @@ describe('ProjectController', function() {
         // when they request to link an email but the institution returns
         // a different email
         this.res.render = (pageName, opts) => {
-          expect(opts.notifications).to.deep.include({
+          expect(opts.notificationsInstitution).to.deep.include({
             institutionEmail: this.institutionEmail,
             requestedEmail: 'requested@overleaf.com',
             templateKey: 'notification_institution_sso_non_canonical'
@@ -694,7 +736,7 @@ describe('ProjectController', function() {
       })
       it('should show a notification when intent was to register via SSO but account existed', function() {
         this.res.render = (pageName, opts) => {
-          expect(opts.notifications).to.deep.include({
+          expect(opts.notificationsInstitution).to.deep.include({
             email: this.institutionEmail,
             templateKey: 'notification_institution_sso_already_registered'
           })
@@ -705,9 +747,80 @@ describe('ProjectController', function() {
             hasEntitlement: false,
             universityName: 'Overleaf'
           },
-          registerIntercept: true
+          registerIntercept: {
+            id: 1,
+            name: 'Example University'
+          }
         }
         this.ProjectController.projectListPage(this.req, this.res)
+      })
+      it('should not show a register notification if the flow was abandoned', function() {
+        // could initially start to register with an SSO email and then
+        // abandon flow and login with an existing non-institution SSO email
+        this.res.render = (pageName, opts) => {
+          expect(opts.notificationsInstitution).to.deep.not.include({
+            email: 'test@overleaf.com',
+            templateKey: 'notification_institution_sso_already_registered'
+          })
+        }
+        this.req.session.saml = {
+          registerIntercept: {
+            id: 1,
+            name: 'Example University'
+          }
+        }
+        this.ProjectController.projectListPage(this.req, this.res)
+      })
+      it('should show institution account linked to another account', function() {
+        this.res.render = (pageName, opts) => {
+          expect(opts.notificationsInstitution).to.deep.include({
+            templateKey: 'notification_institution_sso_linked_by_another'
+          })
+          // Also check other notifications are not shown
+          expect(opts.notificationsInstitution).to.not.deep.include({
+            email: this.institutionEmail,
+            templateKey: 'notification_institution_sso_already_registered'
+          })
+          expect(opts.notificationsInstitution).to.not.deep.include({
+            institutionEmail: this.institutionEmail,
+            requestedEmail: 'requested@overleaf.com',
+            templateKey: 'notification_institution_sso_non_canonical'
+          })
+          expect(opts.notificationsInstitution).to.not.deep.include({
+            email: this.institutionEmail,
+            institutionName: this.institutionName,
+            templateKey: 'notification_institution_sso_linked'
+          })
+        }
+        this.req.session.saml = {
+          emailNonCanonical: this.institutionEmail,
+          institutionEmail: this.institutionEmail,
+          requestedEmail: 'requested@overleaf.com',
+          linkedToAnother: true
+        }
+        this.ProjectController.projectListPage(this.req, this.res)
+      })
+      describe('when linking/logging in initiated on institution side', function() {
+        it('should not show a linked another email notification', function() {
+          // this is only used when initated on Overleaf,
+          // because we keep track of the requested email they tried to link
+          this.res.render = (pageName, opts) => {
+            expect(opts.notificationsInstitution).to.not.deep.include({
+              institutionEmail: this.institutionEmail,
+              requestedEmail: undefined,
+              templateKey: 'notification_institution_sso_non_canonical'
+            })
+          }
+          this.req.session.saml = {
+            emailNonCanonical: this.institutionEmail,
+            institutionEmail: this.institutionEmail,
+            linked: {
+              hasEntitlement: false,
+              universityName: this.institutionName
+            }
+          }
+          this.ProjectController.projectListPage(this.req, this.res)
+        })
       })
     })
 
@@ -718,7 +831,7 @@ describe('ProjectController', function() {
       })
       it('should not show institution sso available notification', function() {
         this.res.render = (pageName, opts) => {
-          expect(opts.notifications).to.deep.not.include({
+          expect(opts.notificationsInstitution).to.deep.not.include({
             email: 'test@overleaf.com',
             institutionId: 1,
             institutionName: 'Overleaf',
@@ -1134,7 +1247,7 @@ describe('ProjectController', function() {
         this.user._id
       )
       expect(result).to.exist
-      expect(result).to.be.object
+      expect(result).to.be.an('object')
       expect(result).to.deep.equal({
         id: 'abcd',
         name: 'netsenits',
@@ -1163,7 +1276,7 @@ describe('ProjectController', function() {
           this.user._id
         )
         expect(result).to.exist
-        expect(result).to.be.object
+        expect(result).to.be.an('object')
         expect(result).to.deep.equal({
           id: 'abcd',
           name: 'netsenits',

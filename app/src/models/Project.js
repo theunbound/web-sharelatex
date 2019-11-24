@@ -1,24 +1,9 @@
-/* eslint-disable
-    camelcase,
-    max-len,
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS102: Remove unnecessary code created because of implicit returns
- * DS207: Consider shorter variations of null checks
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
-const mongoose = require('mongoose')
-const Settings = require('settings-sharelatex')
+const mongoose = require('../infrastructure/Mongoose')
 const _ = require('underscore')
 const { FolderSchema } = require('./Folder.js')
-const logger = require('logger-sharelatex')
-const concreteObjectId = require('mongoose').Types.ObjectId
 const Errors = require('../Features/Errors/Errors')
 
+const concreteObjectId = mongoose.Types.ObjectId
 const { Schema } = mongoose
 const { ObjectId } = Schema
 
@@ -132,36 +117,24 @@ const ProjectSchema = new Schema({
   auditLog: [AuditLogEntrySchema]
 })
 
-ProjectSchema.statics.getProject = function(project_or_id, fields, callback) {
-  if (project_or_id._id != null) {
-    return callback(null, project_or_id)
+ProjectSchema.statics.getProject = function(projectOrId, fields, callback) {
+  if (projectOrId._id != null) {
+    callback(null, projectOrId)
   } else {
     try {
-      concreteObjectId(project_or_id.toString())
+      concreteObjectId(projectOrId.toString())
     } catch (e) {
       return callback(new Errors.NotFoundError(e.message))
     }
-    return this.findById(project_or_id, fields, callback)
+    this.findById(projectOrId, fields, callback)
   }
 }
 
-var applyToAllFilesRecursivly = (ProjectSchema.statics.applyToAllFilesRecursivly = function(
-  folder,
-  fun
-) {
+function applyToAllFilesRecursivly(folder, fun) {
   _.each(folder.fileRefs, file => fun(file))
-  return _.each(folder.folders, folder =>
-    applyToAllFilesRecursivly(folder, fun)
-  )
-})
+  _.each(folder.folders, folder => applyToAllFilesRecursivly(folder, fun))
+}
+ProjectSchema.statics.applyToAllFilesRecursivly = applyToAllFilesRecursivly
 
-const conn = mongoose.createConnection(Settings.mongo.url, {
-  server: { poolSize: Settings.mongo.poolSize || 10 },
-  config: { autoIndex: false }
-})
-
-const Project = conn.model('Project', ProjectSchema)
-
-mongoose.model('Project', ProjectSchema)
-exports.Project = Project
+exports.Project = mongoose.model('Project', ProjectSchema)
 exports.ProjectSchema = ProjectSchema

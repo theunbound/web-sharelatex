@@ -1,5 +1,6 @@
 let AuthorizationManager
 const CollaboratorsGetter = require('../Collaborators/CollaboratorsGetter')
+const CollaboratorsHandler = require('../Collaborators/CollaboratorsHandler')
 const ProjectGetter = require('../Project/ProjectGetter')
 const { User } = require('../../models/User')
 const PrivilegeLevels = require('./PrivilegeLevels')
@@ -10,8 +11,37 @@ const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
 
 module.exports = AuthorizationManager = {
   isRestrictedUser(userId, privilegeLevel, isTokenMember) {
+    if (privilegeLevel === PrivilegeLevels.NONE) {
+      return true
+    }
     return (
       privilegeLevel === PrivilegeLevels.READ_ONLY && (isTokenMember || !userId)
+    )
+  },
+
+  isRestrictedUserForProject(userId, projectId, token, callback) {
+    this.getPrivilegeLevelForProject(
+      userId,
+      projectId,
+      token,
+      (err, privilegeLevel) => {
+        if (err) {
+          return callback(err)
+        }
+        CollaboratorsHandler.userIsTokenMember(
+          userId,
+          projectId,
+          (err, isTokenMember) => {
+            if (err) {
+              return callback(err)
+            }
+            callback(
+              null,
+              this.isRestrictedUser(userId, privilegeLevel, isTokenMember)
+            )
+          }
+        )
+      }
     )
   },
 

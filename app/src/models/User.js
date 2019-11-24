@@ -1,13 +1,5 @@
-/* eslint-disable
-    max-len,
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-const { Project } = require('./Project')
 const Settings = require('settings-sharelatex')
-const _ = require('underscore')
-const mongoose = require('mongoose')
+const mongoose = require('../infrastructure/Mongoose')
 const uuid = require('uuid')
 const { Schema } = mongoose
 const { ObjectId } = Schema
@@ -127,13 +119,5 @@ const UserSchema = new Schema({
   migratedAt: { type: Date }
 })
 
-const conn = mongoose.createConnection(Settings.mongo.url, {
-  server: { poolSize: Settings.mongo.poolSize || 10 },
-  config: { autoIndex: false }
-})
-
-const User = conn.model('User', UserSchema)
-
-const model = mongoose.model('User', UserSchema)
-exports.User = User
+exports.User = mongoose.model('User', UserSchema)
 exports.UserSchema = UserSchema

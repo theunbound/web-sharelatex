@@ -39,7 +39,7 @@ module.exports = ProjectDuplicator = {
     if (rootDocNameTransform == null)
       rootDocNameTransform = rdn => rdn;
     const setRootDoc = _.once(doc_id =>
-      ProjectEntityUpdateHandler.setRootDoc(newProject._id, doc_id)
+      ProjectEntityUpdateHandler.setRootDoc(newProject._id, doc_id, () => {})
     )
     function docName(name) {
       return ( originalRootDoc != null && name == originalRootDoc.name )

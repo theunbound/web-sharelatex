@@ -41,6 +41,7 @@ module.exports = Features = {
       case 'templates-server-pro':
         return Settings.overleaf == null
       case 'affiliations':
+      case 'analytics':
         // Checking both properties is needed for the time being to allow
         // enabling the feature in web-api and disabling in Server Pro
         // see https://github.com/overleaf/web-internal/pull/2127
@@ -53,6 +54,8 @@ module.exports = Features = {
         return Settings.apis.references.url != null
       case 'saml':
         return Settings.enableSaml
+      case 'link-url':
+        return Settings.apis.linkedUrlProxy && Settings.apis.linkedUrlProxy.url
       default:
         throw new Error(`unknown feature: ${feature}`)
     }

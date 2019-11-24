@@ -28,6 +28,7 @@ describe('AuthorizationManager', function() {
       },
       requires: {
         '../Collaborators/CollaboratorsGetter': (this.CollaboratorsGetter = {}),
+        '../Collaborators/CollaboratorsHandler': (this.CollaboratorsHandler = {}),
         '../Project/ProjectGetter': (this.ProjectGetter = {}),
         '../../models/User': {
           User: (this.User = {})
@@ -54,7 +55,11 @@ describe('AuthorizationManager', function() {
       ]
       const restrictedScenarios = [
         [null, 'readOnly', false],
-        ['id', 'readOnly', true]
+        ['id', 'readOnly', true],
+        [null, false, true],
+        [null, false, false],
+        ['id', false, true],
+        ['id', false, false]
       ]
       for (var notRestrictedArgs of notRestrictedScenarios) {
         expect(

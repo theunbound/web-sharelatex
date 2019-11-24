@@ -41,13 +41,15 @@ module.exports = class UserHelper {
     this.user = null
     // cookie jar
     this.jar = request.jar()
+    // create new request instance
+    this.request = request.defaults({})
     // initialize request instance with default options
     this.setRequestDefaults()
   }
 
   setRequestDefaults(defaults = {}) {
     // request-promise instance for making requests
-    this.request = request.defaults({
+    this.request = this.request.defaults({
       baseUrl: UserHelper.baseUrl(),
       followRedirect: false,
       jar: this.jar,
@@ -137,7 +139,9 @@ module.exports = class UserHelper {
       json: userData
     })
     if (response.statusCode !== 200 || response.body.redir !== '/project') {
-      throw new Error('login failed')
+      const error = new Error('login failed')
+      error.response = response
+      throw error
     }
     userHelper.user = await UserGetter.promises.getUser({
       email: userData.email
@@ -157,6 +161,11 @@ module.exports = class UserHelper {
     const { body } = await userHelper.request.post('/register', options)
     if (body.message && body.message.type === 'error') {
       throw new Error(`register api error: ${body.message.text}`)
+    }
+    if (body.redir === '/institutional-login') {
+      throw new Error(
+        `cannot register intitutional email: ${options.json.email}`
+      )
     }
     userHelper.user = await UserGetter.promises.getUser({
       email: userData.email

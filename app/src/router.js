@@ -35,7 +35,6 @@ const ChatController = require('./Features/Chat/ChatController')
 const BlogController = require('./Features/Blog/BlogController')
 const Modules = require('./infrastructure/Modules')
 const RateLimiterMiddleware = require('./Features/Security/RateLimiterMiddleware')
-const RealTimeProxyRouter = require('./Features/RealTimeProxy/RealTimeProxyRouter')
 const InactiveProjectController = require('./Features/InactiveData/InactiveProjectController')
 const ContactRouter = require('./Features/Contacts/ContactRouter')
 const ReferencesController = require('./Features/References/ReferencesController')
@@ -101,7 +100,6 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
   UploadsRouter.apply(webRouter, privateApiRouter)
   PasswordResetRouter.apply(webRouter, privateApiRouter)
   StaticPagesRouter.apply(webRouter, privateApiRouter)
-  RealTimeProxyRouter.apply(webRouter, privateApiRouter)
   ContactRouter.apply(webRouter, privateApiRouter)
   AnalyticsRouter.apply(webRouter, privateApiRouter, publicApiRouter)
   LinkedFilesRouter.apply(webRouter, privateApiRouter, publicApiRouter)
@@ -746,7 +744,7 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
     InactiveProjectController.deactivateProject
   )
 
-  webRouter.get(
+  privateApiRouter.get(
     /^\/internal\/project\/([^/]*)\/output\/(.*)$/,
     function(req, res, next) {
       const params = {
@@ -981,6 +979,7 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
     res.send('web sharelatex is alive (api)')
   )
 
+  // used by kubernetes health-check and acceptance tests
   webRouter.get('/dev/csrf', (req, res) => res.send(res.locals.csrfToken))
 
   publicApiRouter.get('/health_check', HealthCheckController.check)
