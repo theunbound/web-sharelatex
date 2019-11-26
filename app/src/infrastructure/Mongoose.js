@@ -1,6 +1,5 @@
 const mongoose = require('mongoose')
 const Settings = require('settings-sharelatex')
-const RevysterHelper = require('../Features/Helpers/RevysterHelper');
 const logger = require('logger-sharelatex')
 
 const POOL_SIZE = Settings.mongo.poolSize
@@ -23,7 +22,7 @@ mongoose.connection.on('connected', () => {
     },
     'mongoose default connection open'
   )
-  RevysterHelper.initDb()
+  require('../Features/Helpers/RevysterHelper').initDb()
 })
 
 mongoose.connection.on('error', err =>
