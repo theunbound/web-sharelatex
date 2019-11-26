@@ -5,15 +5,26 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
       $scope.setFilter(filter)
     }
 
-    $scope._clearTags = () =>
+    $scope._clearTags = () => {
+      $scope._clearTagSelections()
+      $scope._clearHiddenTags()
+    }
+
+    $scope._clearTagSelections = () =>
       $scope.tags.forEach(tag => {
         tag.selected = false
         if ( tag.subSelected ) tag.subSelected = false
       })
 
+    $scope._clearHiddenTags = () =>
+      $scope.tags.forEach( tag => {
+        if (tag.hidden) tag.hidden = false
+      })
+
     $scope.selectTag = function(tag) {
-      $scope._clearTags()
+      $scope._clearTagSelections()
       tag.selected = true
+      if ( tag.hidden ) tag.hidden = false
       return $scope.setFilter('tag')
     }
 
@@ -27,9 +38,25 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
       $scope.setFilter('untagged')
     }
 
+    $scope.hideTag = function(tag) {
+      tag.selected = false
+      if (tag.subSelected) tag.subSelected = false
+      tag.hidden = true
+      $scope.setFilter('tag')
+    }
+
+    $scope.unhideTag = function(tag) {
+      tag.hidden = false
+      if ( $scope.tags.some( t => t.selected || t.hidden ))
+        $scope.setFilter('tag')
+      else
+        $scope.filterProjects('all')
+    }
+
     $scope.countProjectsForTag = function(tag) {
       return tag.project_ids.reduce((acc, projectId) => {
         const project = $scope.getProjectById(projectId)
+        const hiddenTags = $scope.tags.filter( t => t.hidden )
 
         // There is a bug where the tag is not cleaned up when you leave a
         // project, so tag.project_ids can contain a project that the user can
@@ -37,7 +64,12 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
         if (!project) return acc
 
         // Ignore archived projects as they are not shown in the filter
-        if (!project.archived) {
+        if (!project.archived
+            // Don't count projects with tags that are hidden,
+            // unless it's the tag we are counting for now.
+            && !hiddenTags.some( t => ( t != tag
+                                        && project.tags.includes(t) ))
+           ) {
           return acc + 1
         } else {
           return acc
@@ -49,10 +81,13 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
       // Basically the same as above...
       return tag.project_ids.reduce((acc, projectId) => {
         const project = $scope.getProjectById(projectId)
+        const hiddenTags = $scope.tags.filter( t => t.hidden )
         const supertag = $scope.tags.find( t => t.selected )
 
         if ( project
              && !project.archived
+             && !hiddenTags.some( t => ( t != tag
+                                         && project.tags.includes(t) ))
              // ...but also check that we are a subtag.
              && project.tags.includes(supertag)
            ) {

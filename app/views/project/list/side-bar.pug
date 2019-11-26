@@ -76,7 +76,7 @@
 				span.name #{translate("new_folder")}
 		li.tag(
 			ng-repeat="tag in tags | orderBy:'name'",
-			ng-class="{active: tag.selected}",
+			ng-class="{active: tag.selected, greyed: tag.hidden}",
 			ng-cloak,
 			ng-click="selectTag(tag)"
 		)
@@ -86,7 +86,8 @@
 						'fa-folder-open': tag.selected,\
 						'fa-folder': !tag.selected\
 					}"
-					ng-style="{ 'color': 'hsl({{ getHueForTagId(tag._id) }}, 70%, 45%)' }"
+					ng-style="tag.hidden ? {} \
+               : { 'color': 'hsl({{ getHueForTagId(tag._id) }}, 70%, 45%)' }"
 					aria-hidden="true"
 				)
 				span.name {{tag.name}} 
@@ -115,12 +116,19 @@
 					li
 						a(href, ng-click="deleteTag(tag)", stop-propagation="click")
 							| #{translate("delete")}
+					li(ng-if="!tag.hidden")
+						a(href, ng-click="hideTag(tag)", stop-propagation="click")
+							| Skjul
+					li(ng-if="tag.hidden")
+						a(href, ng-click="unhideTag(tag)", stop-propagation="click")
+							| Afslør
 			ul.list-unstyled.folders-menu.subtags(
 				ng-if="tag.selected"
 			)
 				li.tag(
 					ng-repeat="subtag in tags \
 						| filter:{ _id: '!' + tag._id } \
+						| filter:{ hidden: '!true' } \
 						| filter:countProjectsForSubTag \
 						| orderBy:'name'",
 					ng-class="{active: subtag.subSelected}",
