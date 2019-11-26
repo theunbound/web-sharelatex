@@ -115,6 +115,38 @@
 					li
 						a(href, ng-click="deleteTag(tag)", stop-propagation="click")
 							| #{translate("delete")}
+			ul.list-unstyled.folders-menu.subtags(
+				ng-if="tag.selected"
+			)
+				li.tag(
+					ng-repeat="subtag in tags \
+						| filter:{ _id: '!' + tag._id } \
+						| filter:countProjectsForSubTag \
+						| orderBy:'name'",
+					ng-class="{active: subtag.subSelected}",
+					ng-cloak,
+					ng-click="subSelectTag(subtag)",
+					stop-propagation="click"
+				)
+					a.tag-name(href)
+						i.icon.fa.fa-fw(
+							ng-class="{\
+								'fa-folder-open': subtag.subSelected,\
+								'fa-folder': !subtag.subSelected\
+							}"
+							ng-style="{ 'color': 'hsl({{ getHueForTagId(subtag._id) }}, 70%, 45%)' }"
+							aria-hidden="true"
+						)
+						span.name {{subtag.name}} 
+							span.subdued  ({{countProjectsForSubTag(subtag)}})
+							span.v1-badge(
+								ng-if="subtag.isV1",
+								ng-cloak,
+								aria-label=translate("v1_badge")
+								tooltip-template="'v1TagTooltipTemplate'"
+								tooltip-append-to-body="true"
+							)
+
 		li.tag.untagged(
 			ng-if="tags.length",
 			ng-cloak,

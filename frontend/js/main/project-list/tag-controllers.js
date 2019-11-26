@@ -8,12 +8,18 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
     $scope._clearTags = () =>
       $scope.tags.forEach(tag => {
         tag.selected = false
+        if ( tag.subSelected ) tag.subSelected = false
       })
 
     $scope.selectTag = function(tag) {
-      tag.selected = !tag.selected
-      if ( $scope.tags.some( t => t.selected ) ) $scope.setFilter('tag')
-      else $scope.filterProjects()
+      $scope._clearTags()
+      tag.selected = true
+      return $scope.setFilter('tag')
+    }
+
+    $scope.subSelectTag = function(tag) {
+      tag.subSelected = !tag.subSelected
+      $scope.setFilter('tag')   // We can be confident of this
     }
 
     $scope.selectUntagged = function() {
@@ -32,6 +38,24 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
 
         // Ignore archived projects as they are not shown in the filter
         if (!project.archived) {
+          return acc + 1
+        } else {
+          return acc
+        }
+      }, 0)
+    }
+
+    $scope.countProjectsForSubTag = function(tag) {
+      // Basically the same as above...
+      return tag.project_ids.reduce((acc, projectId) => {
+        const project = $scope.getProjectById(projectId)
+        const supertag = $scope.tags.find( t => t.selected )
+
+        if ( project
+             && !project.archived
+             // ...but also check that we are a subtag.
+             && project.tags.includes(supertag)
+           ) {
           return acc + 1
         } else {
           return acc

@@ -291,7 +291,9 @@ define(['base', 'main/project-list/services/project-list'], function(App) {
     }
 
     $scope.getSelectedTagsArray = function getSelectedTagsArray() {
-      return Array.from($scope.tags).filter( tag => tag.selected );
+      return Array.from($scope.tags).filter(
+        tag => tag.selected || tag.subSelected
+      );
     }
 
     $scope._removeProjectIdsFromTagArray = function(tag, removeProjectIds) {
