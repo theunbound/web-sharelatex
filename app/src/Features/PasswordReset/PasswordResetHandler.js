@@ -62,10 +62,6 @@ const PasswordResetHandler = {
       'password',
       token,
       (err, data) => {
-        // I don't know why this needs to happen, what might cause it to not
-        // be needed in the future. Caution, I guess.
-        data = data.user_id
-        
         if (err != null) {
           if (err.name === 'NotFoundError') {
             return callback(null, null)

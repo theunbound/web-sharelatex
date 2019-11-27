@@ -87,7 +87,7 @@ module.exports = {
         if (token == null) {
           return callback(new Errors.NotFoundError('no token found'))
         }
-        return callback(null, {user_id: token.data})
+        return callback(null, token.data)
       }
     )
   }
