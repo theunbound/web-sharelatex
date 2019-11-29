@@ -266,7 +266,33 @@ const ProjectController = {
     async.waterfall(
       [
         cb => {
-          if (template === 'example') {
+          if (template.id != null) {
+            res.setTimeout(5 * 60 * 1000); // allow extra time for the copy to complete
+            async.waterfall([ function(cb2) {
+              return User.findById(
+                userId, "first_name last_name", cb2
+              );
+            }, function(user, cb2) {
+              return ProjectDuplicator.duplicateWithTransforms(
+                AuthenticationController.getSessionUser(req),
+                template.id, projectName,
+                {
+                  docTransform: function(string) {
+                    return ProjectCreationHandler._interpolateTemplate(
+                      projectName, user, string
+                    );
+                  },
+                  rootDocNameTransform: function(string) {
+                    return projectName
+                      .replace(/\w[a-zæøå]/g, match => match.toUpperCase() )
+                      .replace(/\w/g, "")
+                      + ".tex";
+                  }
+                },
+                cb2
+              );
+            }], cb);
+          } else if (template === 'example') {
             ProjectCreationHandler.createExampleProject(userId, projectName, cb)
           } else {
             ProjectCreationHandler.createBasicProject(userId, projectName, cb)
