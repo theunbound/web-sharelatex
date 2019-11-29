@@ -27,6 +27,7 @@ const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
 const CollaboratorsGetter = require('../Collaborators/CollaboratorsGetter')
 const Modules = require('../../infrastructure/Modules')
 const ProjectEntityHandler = require('./ProjectEntityHandler')
+const TpdsProjectFlusher = require('../ThirdPartyDataStore/TpdsProjectFlusher')
 const UserGetter = require('../User/UserGetter')
 const NotificationsBuilder = require('../Notifications/NotificationsBuilder')
 const { V1ConnectionError } = require('../Errors/Errors')
@@ -34,7 +35,6 @@ const Features = require('../../infrastructure/Features')
 const BrandVariationsHandler = require('../BrandVariations/BrandVariationsHandler')
 const { getUserAffiliations } = require('../Institutions/InstitutionsAPI')
 const V1Handler = require('../V1/V1Handler')
-const { Project } = require('../../models/Project')
 
 const ProjectController = {
   _isInPercentageRollout(rolloutName, objectId, percentage) {
@@ -122,7 +122,6 @@ const ProjectController = {
   deleteProject(req, res) {
     const projectId = req.params.Project_id
     const forever = (req.query != null ? req.query.forever : undefined) != null
-    logger.log({ projectId, forever }, 'received request to archive project')
     const user = AuthenticationController.getSessionUser(req)
     const cb = err => {
       if (err != null) {
@@ -145,11 +144,9 @@ const ProjectController = {
 
   archiveProject(req, res, next) {
     const projectId = req.params.Project_id
-    logger.log({ projectId }, 'received request to archive project')
+    const userId = AuthenticationController.getLoggedInUserId(req)
 
-    const user = AuthenticationController.getSessionUser(req)
-
-    ProjectDeleter.archiveProject(projectId, user._id, function(err) {
+    ProjectDeleter.archiveProject(projectId, userId, function(err) {
       if (err != null) {
         return next(err)
       } else {
@@ -160,11 +157,35 @@ const ProjectController = {
 
   unarchiveProject(req, res, next) {
     const projectId = req.params.Project_id
-    logger.log({ projectId }, 'received request to unarchive project')
+    const userId = AuthenticationController.getLoggedInUserId(req)
 
-    const user = AuthenticationController.getSessionUser(req)
+    ProjectDeleter.unarchiveProject(projectId, userId, function(err) {
+      if (err != null) {
+        return next(err)
+      } else {
+        return res.sendStatus(200)
+      }
+    })
+  },
 
-    ProjectDeleter.unarchiveProject(projectId, user._id, function(err) {
+  trashProject(req, res, next) {
+    const projectId = req.params.project_id
+    const userId = AuthenticationController.getLoggedInUserId(req)
+
+    ProjectDeleter.trashProject(projectId, userId, function(err) {
+      if (err != null) {
+        return next(err)
+      } else {
+        return res.sendStatus(200)
+      }
+    })
+  },
+
+  untrashProject(req, res, next) {
+    const projectId = req.params.project_id
+    const userId = AuthenticationController.getLoggedInUserId(req)
+
+    ProjectDeleter.untrashProject(projectId, userId, function(err) {
       if (err != null) {
         return next(err)
       } else {
@@ -174,9 +195,6 @@ const ProjectController = {
   },
 
   expireDeletedProjectsAfterDuration(req, res) {
-    logger.log(
-      'received request to look for old deleted projects and expire them'
-    )
     ProjectDeleter.expireDeletedProjectsAfterDuration(err => {
       if (err != null) {
         res.sendStatus(500)
@@ -188,7 +206,6 @@ const ProjectController = {
 
   expireDeletedProject(req, res, next) {
     const { projectId } = req.params
-    logger.log('received request to expire deleted project', { projectId })
     ProjectDeleter.expireDeletedProject(projectId, err => {
       if (err != null) {
         next(err)
@@ -200,7 +217,6 @@ const ProjectController = {
 
   restoreProject(req, res) {
     const projectId = req.params.Project_id
-    logger.log({ projectId }, 'received request to restore project')
     ProjectDeleter.restoreProject(projectId, err => {
       if (err != null) {
         res.sendStatus(500)
@@ -208,38 +224,6 @@ const ProjectController = {
         res.sendStatus(200)
       }
     })
-  },
-
-  trashProject(req, res, next) {
-    const projectId = req.params.project_id
-    const userId = AuthenticationController.getLoggedInUserId(req)
-
-    Project.update(
-      { _id: projectId },
-      { $addToSet: { trashed: userId } },
-      error => {
-        if (error) {
-          return next(error)
-        }
-        res.sendStatus(200)
-      }
-    )
-  },
-
-  untrashProject(req, res, next) {
-    const projectId = req.params.project_id
-    const userId = AuthenticationController.getLoggedInUserId(req)
-
-    Project.update(
-      { _id: projectId },
-      { $pull: { trashed: userId } },
-      error => {
-        if (error) {
-          return next(error)
-        }
-        res.sendStatus(200)
-      }
-    )
   },
 
   cloneProject(req, res, next) {
@@ -278,71 +262,24 @@ const ProjectController = {
     const projectName =
       req.body.projectName != null ? req.body.projectName.trim() : undefined
     const { template } = req.body
-    // TODO: This could follow the original more closely in style.
-    // That would probably make merging commits from upstream less painful.
-    function finalize(err, project) {
-      if (err != null) {
-        return next(err)
+
+    async.waterfall(
+      [
+        cb => {
+          if (template === 'example') {
+            ProjectCreationHandler.createExampleProject(userId, projectName, cb)
+          } else {
+            ProjectCreationHandler.createBasicProject(userId, projectName, cb)
+          }
+        }
+      ],
+      (err, project) => {
+        if (err != null) {
+          return next(err)
+        }
+        res.send({ project_id: project._id })
       }
-      logger.log(
-        { project, userId, name: projectName, templateType: template },
-        'created project'
-      )
-      res.send({ project_id: project._id })
-    }
-    
-    if (template.id != null) {
-      logger.log(
-        { user: userId, projectOriginalId: template.id, name: projectName },
-        "creating project by cloning"
-      );
-      res.setTimeout(5 * 60 * 1000); // allow extra time for the copy to complete
-      async.waterfall([ function(cb) {
-        return User.findById(
-          userId, "first_name last_name", cb
-        );
-      }, function(user, cb) {
-        return ProjectDuplicator.duplicateWithTransforms(
-          AuthenticationController.getSessionUser(req),
-          template.id, projectName,
-          {
-            docTransform: function(string) {
-              return ProjectCreationHandler._interpolateTemplate(
-                projectName, user, string
-              );
-            },
-            rootDocNameTransform: function(string) {
-              return projectName.replace(
-                  /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g,
-                function(match, index) {
-                  if (+match === 0)
-                    return "";
-                  else if (index === 0)
-                    return match.toLowerCase();
-                  else
-                    return match.toUpperCase();
-                }) + ".tex";
-              }
-            },
-          cb
-        );
-      }], finalize);
-    } else {
-      logger.log(
-        { user: userId, projectType: template, name: projectName },
-        "creating project from template"
-      );
-      if (template === 'example') {
-        ProjectCreationHandler.createExampleProject(userId, projectName, finalize)
-      } else {
-        ProjectCreationHandler.createBasicProject(
-          userId,
-          projectName,
-          ( (template != null) && template !== "none" ) ? template : 'mainbasic',
-          finalize
-        );
-      }
-    }
+    )
   },
 
   renameProject(req, res, next) {
@@ -416,7 +353,7 @@ const ProjectController = {
         projects(cb) {
           ProjectGetter.findAllUsersProjects(
             userId,
-            'name lastUpdated lastUpdatedBy publicAccesLevel archived owner_ref tokens',
+            'name lastUpdated lastUpdatedBy publicAccesLevel archived trashed owner_ref tokens',
             cb
           )
         },
@@ -631,10 +568,7 @@ const ProjectController = {
             parseInt(user._id.toString().slice(-2), 16) <
             freeUserProportion * 255
           const showFrontWidget = paidUser || sampleFreeUser
-          logger.log(
-            { paidUser, sampleFreeUser, showFrontWidget },
-            'deciding whether to show front widget'
-          )
+
           if (showFrontWidget) {
             viewModel.frontChatWidgetRoomId =
               Settings.overleaf != null
@@ -665,7 +599,6 @@ const ProjectController = {
     }
 
     const projectId = req.params.Project_id
-    logger.log({ projectId, anonymous, userId }, 'loading editor')
 
     // record failures to load the custom websocket
     if ((req.query != null ? req.query.ws : undefined) === 'fallback') {
@@ -767,7 +700,10 @@ const ProjectController = {
               (error, brandVariationDetails) => cb(error, brandVariationDetails)
             )
           }
-        ]
+        ],
+        flushToTpds: cb => {
+          TpdsProjectFlusher.flushProjectToTpdsIfNeeded(projectId, cb)
+        }
       },
       (err, results) => {
         if (err != null) {
@@ -778,13 +714,6 @@ const ProjectController = {
         const { user } = results
         const { subscription } = results
         const { brandVariation } = results
-
-        const daysSinceLastUpdated =
-          (new Date() - project.lastUpdated) / 86400000
-        logger.log(
-          { projectId, daysSinceLastUpdated },
-          'got db results for loading editor'
-        )
 
         const token = TokenAccessHandler.getRequestToken(req, projectId)
         const { isTokenMember } = results
@@ -817,7 +746,6 @@ const ProjectController = {
               allowedFreeTrial = !!subscription.freeTrial.allowed || true
             }
 
-            logger.log({ projectId }, 'rendering editor page')
             res.render('project/editor', {
               title: project.name,
               priority_title: true,
@@ -965,6 +893,10 @@ const ProjectController = {
   },
 
   _buildProjectViewModel(project, accessLevel, source, userId) {
+    const archived = ProjectHelper.isArchived(project, userId)
+    // If a project is simultaneously trashed and archived, we will consider it archived but not trashed.
+    const trashed = ProjectHelper.isTrashed(project, userId) && !archived
+
     TokenAccessHandler.protectTokens(project, accessLevel)
     const model = {
       id: project._id,
@@ -974,7 +906,8 @@ const ProjectController = {
       publicAccessLevel: project.publicAccesLevel,
       accessLevel,
       source,
-      archived: ProjectHelper.isArchived(project, userId),
+      archived,
+      trashed,
       owner_ref: project.owner_ref,
       tokens: project.tokens,
       isV1Project: false
@@ -987,11 +920,16 @@ const ProjectController = {
   },
 
   _buildV1ProjectViewModel(project) {
+    const archived = project.archived
+    // If a project is simultaneously trashed and archived, we will consider it archived but not trashed.
+    const trashed = project.removed && !archived
+
     const projectViewModel = {
       id: project.id,
       name: project.title,
       lastUpdated: new Date(project.updated_at * 1000), // Convert from epoch
-      archived: project.removed || project.archived,
+      archived: archived,
+      trashed: trashed,
       isV1Project: true
     }
     if (

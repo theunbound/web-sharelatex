@@ -86,10 +86,8 @@ module.exports = RecurlyWrapper = {
         )
       }
       if (cache.userExists) {
-        logger.log({ user_id: user._id }, 'user already exists in recurly')
         return next(null, cache)
       }
-      logger.log({ user_id: user._id }, 'creating user in recurly')
       const data = {
         account_code: user._id,
         email: user.email,
@@ -434,6 +432,7 @@ module.exports = RecurlyWrapper = {
           },
           'error returned from recurly'
         )
+        // TODO: this should be an Error object not a string
         error = `Recurly API returned with status code: ${response.statusCode}`
       }
       if (response.statusCode === 404 && expect404) {
@@ -556,7 +555,7 @@ module.exports = RecurlyWrapper = {
           )
           cursor = __guard__(
             response.headers.link != null
-              ? response.headers.link.match(/cursor=([0-9]+%3A[0-9]+)&/)
+              ? response.headers.link.match(/cursor=([0-9.]+%3A[0-9.]+)&/)
               : undefined,
             x1 => x1[1]
           )
@@ -761,10 +760,7 @@ module.exports = RecurlyWrapper = {
                 x1 => x1.description
               ) === "A canceled subscription can't transition to canceled"
             ) {
-              logger.log(
-                { subscriptionId, error, body },
-                'subscription already cancelled, not really an error, proceeding'
-              )
+              // subscription already cancelled, not really an error, proceeding
               return callback(null)
             } else {
               return callback(error)

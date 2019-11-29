@@ -11,7 +11,7 @@
  * DS207: Consider shorter variations of null checks
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
-const { db } = require('../../infrastructure/mongojs')
+const { db, ObjectId } = require('../../infrastructure/mongojs')
 const { promisify, callbackify } = require('util')
 const { Project } = require('../../models/Project')
 const { DeletedProject } = require('../../models/DeletedProject')
@@ -51,18 +51,13 @@ const ProjectDeleter = {
     if (callback == null) {
       callback = function(error) {}
     }
-    logger.log(
-      { project_id },
-      'removing flag marking project as deleted by external data source'
-    )
+
     const conditions = { _id: project_id }
     const update = { deletedByExternalDataSource: false }
     return Project.update(conditions, update, {}, callback)
   },
 
   deleteUsersProjects(user_id, callback) {
-    logger.log({ user_id }, 'deleting users projects')
-
     return Project.find({ owner_ref: user_id }, function(error, projects) {
       if (error != null) {
         return callback(error)
@@ -117,7 +112,6 @@ const ProjectDeleter = {
             }
           )
         } else {
-          logger.log({}, 'No deleted projects for duration were found')
           callback(err)
         }
       }
@@ -128,7 +122,6 @@ const ProjectDeleter = {
     if (callback == null) {
       callback = function(error) {}
     }
-    logger.log({ project_id }, 'archived project from user request')
     return Project.update(
       { _id: project_id },
       { $set: { archived: true } },
@@ -137,10 +130,6 @@ const ProjectDeleter = {
           logger.warn({ err }, 'problem archived project')
           return callback(err)
         }
-        logger.log(
-          { project_id },
-          'successfully archived project from user request'
-        )
         return callback()
       }
     )
@@ -160,11 +149,9 @@ const ProjectDeleter = {
 
 // Async methods
 
-async function archiveProject(project_id, userId) {
-  logger.log({ project_id }, 'archiving project from user request')
-
+async function archiveProject(projectId, userId) {
   try {
-    let project = await Project.findOne({ _id: project_id }).exec()
+    let project = await Project.findOne({ _id: projectId }).exec()
     if (!project) {
       throw new Errors.NotFoundError('project not found')
     }
@@ -174,18 +161,19 @@ async function archiveProject(project_id, userId) {
       'ARCHIVE'
     )
 
-    await Project.update({ _id: project_id }, { $set: { archived: archived } })
+    await Project.update(
+      { _id: projectId },
+      { $set: { archived: archived }, $pull: { trashed: ObjectId(userId) } }
+    )
   } catch (err) {
     logger.warn({ err }, 'problem archiving project')
     throw err
   }
 }
 
-async function unarchiveProject(project_id, userId) {
-  logger.log({ project_id }, 'unarchiving project from user request')
-
+async function unarchiveProject(projectId, userId) {
   try {
-    let project = await Project.findOne({ _id: project_id }).exec()
+    let project = await Project.findOne({ _id: projectId }).exec()
     if (!project) {
       throw new Errors.NotFoundError('project not found')
     }
@@ -196,16 +184,51 @@ async function unarchiveProject(project_id, userId) {
       'UNARCHIVE'
     )
 
-    await Project.update({ _id: project_id }, { $set: { archived: archived } })
+    await Project.update({ _id: projectId }, { $set: { archived: archived } })
   } catch (err) {
     logger.warn({ err }, 'problem unarchiving project')
     throw err
   }
 }
 
-async function deleteProject(project_id, options = {}) {
-  logger.log({ project_id }, 'deleting project')
+async function trashProject(projectId, userId) {
+  try {
+    let project = await Project.findOne({ _id: projectId }).exec()
+    if (!project) {
+      throw new Errors.NotFoundError('project not found')
+    }
 
+    await Project.update(
+      { _id: projectId },
+      {
+        $addToSet: { trashed: ObjectId(userId) },
+        $pull: { archived: ObjectId(userId) }
+      }
+    )
+  } catch (err) {
+    logger.warn({ err }, 'problem trashing project')
+    throw err
+  }
+}
+
+async function untrashProject(projectId, userId) {
+  try {
+    let project = await Project.findOne({ _id: projectId }).exec()
+    if (!project) {
+      throw new Errors.NotFoundError('project not found')
+    }
+
+    await Project.update(
+      { _id: projectId },
+      { $pull: { trashed: ObjectId(userId) } }
+    )
+  } catch (err) {
+    logger.warn({ err }, 'problem untrashing project')
+    throw err
+  }
+}
+
+async function deleteProject(project_id, options = {}) {
   try {
     let project = await Project.findOne({ _id: project_id }).exec()
     if (!project) {
@@ -337,8 +360,6 @@ async function expireDeletedProject(projectId) {
         }
       }
     ).exec()
-
-    logger.log({ projectId }, 'Successfully expired deleted project')
   } catch (error) {
     logger.warn({ projectId, error }, 'error expiring deleted project')
     throw error
@@ -350,6 +371,8 @@ async function expireDeletedProject(projectId) {
 const promises = {
   archiveProject: archiveProject,
   unarchiveProject: unarchiveProject,
+  trashProject: trashProject,
+  untrashProject: untrashProject,
   deleteProject: deleteProject,
   undeleteProject: undeleteProject,
   expireDeletedProject: expireDeletedProject,
@@ -359,6 +382,8 @@ const promises = {
 ProjectDeleter.promises = promises
 ProjectDeleter.archiveProject = callbackify(archiveProject)
 ProjectDeleter.unarchiveProject = callbackify(unarchiveProject)
+ProjectDeleter.trashProject = callbackify(trashProject)
+ProjectDeleter.untrashProject = callbackify(untrashProject)
 ProjectDeleter.deleteProject = callbackify(deleteProject)
 ProjectDeleter.undeleteProject = callbackify(undeleteProject)
 ProjectDeleter.expireDeletedProject = callbackify(expireDeletedProject)

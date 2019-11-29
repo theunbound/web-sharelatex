@@ -135,47 +135,18 @@ define(['base'], function(App) {
     return ($scope.cancel = () => $modalInstance.dismiss('cancel'))
   })
 
-  App.controller('DeleteProjectsModalController', function(
+  App.controller('ArchiveTrashLeaveOrDeleteProjectsModalController', function(
     $scope,
     $modalInstance,
     $timeout,
-    projects
+    projects,
+    action
   ) {
-    $scope.projectsToDelete = projects;
-    $scope.projectsToLeave = [];
-    $scope.projectsToArchive = projects.filter(
-      project => !project.archived
-    );
+    $scope.projects = projects
 
-    if (
-      $scope.projectsToLeave.length > 0 &&
-      $scope.projectsToDelete.length > 0
-    ) {
-      if (
-        $scope.projectsToArchive.length > 0 &&
-        window.ExposedSettings.isOverleaf
-      ) {
-        $scope.action = 'archive-and-leave'
-      } else {
-        $scope.action = 'delete-and-leave'
-      }
-    } else if (
-      $scope.projectsToLeave.length === 0 &&
-      $scope.projectsToDelete.length > 0
-    ) {
-      if (
-        $scope.projectsToArchive.length > 0 &&
-        window.ExposedSettings.isOverleaf
-      ) {
-        $scope.action = 'archive'
-      } else {
-        $scope.action = 'delete'
-      }
-    } else {
-      $scope.action = 'leave'
-    }
+    $scope.action = action
 
-    $scope.delete = () => $modalInstance.close()
+    $scope.confirm = () => $modalInstance.close({ projects, action })
 
     $scope.cancel = () => $modalInstance.dismiss('cancel')
   })
