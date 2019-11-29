@@ -55,7 +55,7 @@ const ProjectSchema = new Schema({
   deletedByExternalDataSource: { type: Boolean, default: false },
   description: { type: String, default: '' },
   archived: { type: Schema.Types.Mixed },
-  trashed: [{ type: ObjectId, ref: 'User' }],
+  trashed: { type: Boolean, default: false },
   deletedDocs: [DeletedDocSchema],
   deletedFiles: [DeletedFileSchema],
   imageName: { type: String },
