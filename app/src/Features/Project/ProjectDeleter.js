@@ -155,15 +155,10 @@ async function archiveProject(projectId, userId) {
     if (!project) {
       throw new Errors.NotFoundError('project not found')
     }
-    const archived = ProjectHelper.calculateArchivedArray(
-      project,
-      userId,
-      'ARCHIVE'
-    )
-
+    
     await Project.update(
       { _id: projectId },
-      { $set: { archived: archived }, $pull: { trashed: ObjectId(userId) } }
+      { $set: { archived: true }, $set: { trashed: false } }
     )
   } catch (err) {
     logger.warn({ err }, 'problem archiving project')
@@ -178,13 +173,7 @@ async function unarchiveProject(projectId, userId) {
       throw new Errors.NotFoundError('project not found')
     }
 
-    const archived = ProjectHelper.calculateArchivedArray(
-      project,
-      userId,
-      'UNARCHIVE'
-    )
-
-    await Project.update({ _id: projectId }, { $set: { archived: archived } })
+    await Project.update({ _id: projectId }, { $set: { archived: false } })
   } catch (err) {
     logger.warn({ err }, 'problem unarchiving project')
     throw err
@@ -201,8 +190,7 @@ async function trashProject(projectId, userId) {
     await Project.update(
       { _id: projectId },
       {
-        $addToSet: { trashed: ObjectId(userId) },
-        $pull: { archived: ObjectId(userId) }
+        $set: { trashed: true, archived: false },
       }
     )
   } catch (err) {
@@ -220,7 +208,7 @@ async function untrashProject(projectId, userId) {
 
     await Project.update(
       { _id: projectId },
-      { $pull: { trashed: ObjectId(userId) } }
+      { $set: { trashed: false } }
     )
   } catch (err) {
     logger.warn({ err }, 'problem untrashing project')

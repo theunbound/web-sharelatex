@@ -29,21 +29,13 @@ const ProjectHelper = {
   isArchived(project, userId) {
     userId = ObjectId(userId)
 
-    if (Array.isArray(project.archived)) {
-      return project.archived.find(id => id.equals(userId)) !== undefined
-    } else {
-      return !!project.archived
-    }
+    return project.archived
   },
 
   isTrashed(project, userId) {
     userId = ObjectId(userId)
 
-    if (project.trashed) {
-      return project.trashed.find(id => id.equals(userId)) !== undefined
-    } else {
-      return false
-    }
+    return project.trashed
   },
 
   isArchivedOrTrashed(project, userId) {
