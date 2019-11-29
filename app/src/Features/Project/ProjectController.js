@@ -284,8 +284,8 @@ const ProjectController = {
                   },
                   rootDocNameTransform: function(string) {
                     return projectName
-                      .replace(/\w[a-zæøå]/g, match => match.toUpperCase() )
-                      .replace(/\w/g, "")
+                      .replace(/\s[a-zæøå]/g, match => match.toUpperCase() )
+                      .replace(/\s/g, "")
                       + ".tex";
                   }
                 },

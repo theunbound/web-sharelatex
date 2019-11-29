@@ -170,16 +170,9 @@ const ProjectCreationHandler = {
     if (callback == null) {
       callback = function(error, project) {}
     }
-    const mainName = projectName.replace(
-        /(?:^[æøå\w]|[A-ZÆØÅ]|\b(\w|æ|ø|å)|\s+)/g, function(match, index) {
-        if (+match === 0)
-          return "";
-        else if (index === 0)
-          return match.toLowerCase();
-        else
-          return match.toUpperCase();
-        }
-    );
+    const mainName = projectName
+          .replace(/\s[a-zæøå]/g, match => match.toUpperCase() )
+          .replace(/\s/g, "")
     return ProjectCreationHandler.createBlankProject(
       owner_id, projectName, function(error, project) {
         if (error != null) {
