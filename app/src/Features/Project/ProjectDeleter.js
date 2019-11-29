@@ -158,7 +158,7 @@ async function archiveProject(projectId, userId) {
     
     await Project.update(
       { _id: projectId },
-      { $set: { archived: true }, $set: { trashed: false } }
+      { $set: { archived: true, trashed: false } }
     )
   } catch (err) {
     logger.warn({ err }, 'problem archiving project')
