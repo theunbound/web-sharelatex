@@ -196,16 +196,18 @@ define(['base', 'main/project-list/services/project-list'], function(App) {
     $scope.getFirstSelectedProject = () => $scope.selectedProjects[0]
 
     $scope.hasLeavableProjectsSelected = () =>
-      _.some(
-        $scope.getSelectedProjects(),
-        project => project.accessLevel !== 'owner' && project.trashed
-      )
+      // _.some(
+      //   $scope.getSelectedProjects(),
+      //   project => project.accessLevel !== 'owner' && project.trashed
+      // )
+      false
 
     $scope.hasDeletableProjectsSelected = () =>
-      _.some(
-        $scope.getSelectedProjects(),
-        project => project.accessLevel === 'owner' && project.trashed
-      )
+      // _.some(
+      //   $scope.getSelectedProjects(),
+      //   project => project.accessLevel === 'owner' && project.trashed
+      // )
+      $scope.getSelectedProjects().some( project => project.trashed )
 
     $scope.updateVisibleProjects = function() {
       $scope.visibleProjects = []
