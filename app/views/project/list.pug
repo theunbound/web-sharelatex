@@ -8,7 +8,7 @@ block content
 		!{StringHelper.stringifyJsonForScript({ projects, tags, notifications, notificationsInstitution })}
 
 	script(type="text/javascript").
-		window.data = JSON.parse($("#data").text());
+		window.data = JSON.parse(document.querySelector("#data").text);
 		window.algolia = {
 			institutions: {
 				app_id:  '#{algolia_app_id}',
@@ -61,6 +61,9 @@ block content
 		role="main"
 	)
 		- if(typeof(suppressSystemMessages) == "undefined")
+			script.
+				window.systemMessages = !{StringHelper.stringifyJsonForScript(systemMessages)};
+
 			.system-messages(
 				ng-cloak
 				ng-controller="SystemMessagesController"

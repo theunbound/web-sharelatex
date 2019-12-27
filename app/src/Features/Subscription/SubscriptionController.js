@@ -29,6 +29,7 @@ const FeaturesUpdater = require('./FeaturesUpdater')
 const planFeatures = require('./planFeatures')
 const GroupPlansData = require('./GroupPlansData')
 const V1SubscriptionManager = require('./V1SubscriptionManager')
+const Errors = require('../Errors/Errors')
 const SubscriptionErrors = require('./Errors')
 const HttpErrors = require('@overleaf/o-error/http')
 
@@ -52,6 +53,7 @@ module.exports = SubscriptionController = {
             title: 'plans_and_pricing',
             plans,
             gaExperiments: Settings.gaExperiments.plansPage,
+            gaOptimize: true,
             recomendedCurrency,
             planFeatures,
             groupPlans: GroupPlansData
@@ -215,6 +217,10 @@ module.exports = SubscriptionController = {
           }
 
           if (err instanceof SubscriptionErrors.RecurlyTransactionError) {
+            return next(
+              new HttpErrors.UnprocessableEntityError({}).withCause(err)
+            )
+          } else if (err instanceof Errors.InvalidError) {
             return next(
               new HttpErrors.UnprocessableEntityError({}).withCause(err)
             )

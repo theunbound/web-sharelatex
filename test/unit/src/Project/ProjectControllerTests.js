@@ -84,6 +84,9 @@ describe('ProjectController', function() {
       getSessionUser: sinon.stub().returns(this.user),
       isUserLoggedIn: sinon.stub().returns(true)
     }
+    this.UserController = {
+      logout: sinon.stub()
+    }
     this.AnalyticsManager = { getLastOccurrence: sinon.stub() }
     this.TokenAccessHandler = {
       getRequestToken: sinon.stub().returns(this.token),
@@ -131,6 +134,10 @@ describe('ProjectController', function() {
       }
     ])
 
+    this.SystemMessageManager = {
+      getMessages: sinon.stub().callsArgWith(0, null, [])
+    }
+
     this.ProjectController = SandboxedModule.require(MODULE_PATH, {
       globals: {
         console: console
@@ -148,10 +155,12 @@ describe('ProjectController', function() {
           inc() {}
         },
         '@overleaf/o-error/http': HttpErrors,
+        '../SystemMessages/SystemMessageManager': this.SystemMessageManager,
         './ProjectDeleter': this.ProjectDeleter,
         './ProjectDuplicator': this.ProjectDuplicator,
         './ProjectCreationHandler': this.ProjectCreationHandler,
         '../Editor/EditorController': this.EditorController,
+        '../User/UserController': this.UserController,
         './ProjectHelper': this.ProjectHelper,
         '../Subscription/SubscriptionLocator': this.SubscriptionLocator,
         '../Subscription/LimitationsManager': this.LimitationsManager,
@@ -385,6 +394,14 @@ describe('ProjectController', function() {
 
   describe('projectListPage', function() {
     beforeEach(function() {
+      this.systemMessages = [
+        { _id: '42', content: 'Hello from the other side!' },
+        { _id: '1337', content: 'Can you read this?' }
+      ]
+      this.SystemMessageManager.getMessages = sinon
+        .stub()
+        .callsArgWith(0, null, this.systemMessages)
+
       this.tags = [
         { name: 1, project_ids: ['1', '2', '3'] },
         { name: 2, project_ids: ['a', '1'] },
@@ -451,6 +468,14 @@ describe('ProjectController', function() {
     it('should send the tags', function(done) {
       this.res.render = (pageName, opts) => {
         opts.tags.length.should.equal(this.tags.length)
+        done()
+      }
+      this.ProjectController.projectListPage(this.req, this.res)
+    })
+
+    it('should send the systemMessages', function(done) {
+      this.res.render = (pageName, opts) => {
+        opts.systemMessages.should.deep.equal(this.systemMessages)
         done()
       }
       this.ProjectController.projectListPage(this.req, this.res)

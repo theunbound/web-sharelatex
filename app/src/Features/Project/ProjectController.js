@@ -35,6 +35,8 @@ const Features = require('../../infrastructure/Features')
 const BrandVariationsHandler = require('../BrandVariations/BrandVariationsHandler')
 const { getUserAffiliations } = require('../Institutions/InstitutionsAPI')
 const V1Handler = require('../V1/V1Handler')
+const UserController = require('../User/UserController')
+const SystemMessageManager = require('../SystemMessages/SystemMessageManager')
 
 const ProjectController = {
   _isInPercentageRollout(rolloutName, objectId, percentage) {
@@ -328,8 +330,10 @@ const ProjectController = {
         if (err != null) {
           return next(err)
         }
+
+        // _buildProjectList already converts archived/trashed to booleans so isArchivedOrTrashed should not be used here
         projects = ProjectController._buildProjectList(projects, userId)
-          .filter(p => !ProjectHelper.isArchivedOrTrashed(p, userId))
+          .filter(p => !(p.archived || p.trashed))
           .filter(p => !p.isV1Project)
           .map(p => ({ _id: p.id, name: p.name, accessLevel: p.accessLevel }))
 
@@ -370,6 +374,9 @@ const ProjectController = {
     let noV1Connection = false
     async.parallel(
       {
+        systemMessages(cb) {
+          SystemMessageManager.getMessages(cb)
+        },
         tags(cb) {
           TagsHandler.getAllTags(userId, cb)
         },
@@ -441,6 +448,11 @@ const ProjectController = {
           results.v1Projects.noConnection = true
         }
         const { notifications, user, userAffiliations } = results
+        // Handle case of deleted user
+        if (user == null) {
+          UserController.logout(req, res, next)
+          return
+        }
         const v1Tags =
           (results.v1Projects != null ? results.v1Projects.tags : undefined) ||
           []
@@ -561,6 +573,7 @@ const ProjectController = {
           const viewModel = {
             title: 'your_projects',
             priority_title: true,
+            systemMessages: results.systemMessages,
             projects,
             tags,
             notifications: notifications || [],
@@ -686,6 +699,12 @@ const ProjectController = {
             cb(null, defaultSettingsForAnonymousUser(userId))
           } else {
             User.findById(userId, (err, user) => {
+              // Handle case of deleted user
+              if (user == null) {
+                UserController.logout(req, res, next)
+                return
+              }
+
               logger.log({ projectId, userId }, 'got user')
               cb(err, user)
             })
@@ -825,7 +844,8 @@ const ProjectController = {
                 Boolean(project.overleaf.history.display),
               brandVariation,
               allowedImageNames: Settings.allowedImageNames || [],
-              gitBridgePublicBaseUrl: Settings.gitBridgePublicBaseUrl
+              gitBridgePublicBaseUrl: Settings.gitBridgePublicBaseUrl,
+              showSupport: Features.hasFeature('support')
             })
             timer.done()
           }

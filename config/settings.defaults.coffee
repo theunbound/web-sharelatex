@@ -8,10 +8,11 @@ minutes = 60 * seconds
 
 # These credentials are used for authenticating api requests
 # between services that may need to go over public channels
-httpAuthUser = process.env['WEB_API_USER'] or "sharelatex"
-httpAuthPass = process.env['WEB_API_PASSWORD'] or "password"
+httpAuthUser = process.env['WEB_API_USER']
+httpAuthPass = process.env['WEB_API_PASSWORD']
 httpAuthUsers = {}
-httpAuthUsers[httpAuthUser] = httpAuthPass
+if httpAuthUser and httpAuthPass
+	httpAuthUsers[httpAuthUser] = httpAuthPass
 
 sessionSecret = process.env['SESSION_SECRET'] or "secret-please-change"
 
@@ -358,7 +359,8 @@ module.exports = settings =
 	# analytics:
 	# 	ga:
 	# 		token: ""
-	#
+	# 	gaOptimize:
+	# 		id: ""
 	# ShareLaTeX's help desk is provided by tenderapp.com
 	# tenderUrl: ""
 	#
@@ -564,6 +566,8 @@ module.exports = settings =
 	compileBodySizeLimitMb: process.env['COMPILE_BODY_SIZE_LIMIT_MB'] or 5
 
 	validRootDocExtensions: ['tex', 'Rtex', 'ltx']
+
+	emailConfirmationDisabled: (process.env['EMAIL_CONFIRMATION_DISABLED'] == "true") or false
 
 	# allowedImageNames: [
 	# 	{imageName: 'texlive-full:2017.1', imageDesc: 'TeXLive 2017'}

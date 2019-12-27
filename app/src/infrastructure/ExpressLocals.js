@@ -12,7 +12,6 @@ const IS_DEV_ENV = ['development', 'test'].includes(process.env.NODE_ENV)
 const Features = require('./Features')
 const AuthenticationController = require('../Features/Authentication/AuthenticationController')
 const PackageVersions = require('./PackageVersions')
-const SystemMessageManager = require('../Features/SystemMessages/SystemMessageManager')
 const Modules = require('./Modules')
 
 const htmlEncoder = new NodeHtmlEncoder('numerical')
@@ -78,6 +77,12 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
       staticFilesBase = ''
     }
 
+    res.locals.buildBaseAssetPath = function() {
+      // Return the base asset path (including the CDN url) so that webpack can
+      // use this to dynamically fetch scripts (e.g. PDFjs worker)
+      return Url.resolve(staticFilesBase, '/')
+    }
+
     res.locals.buildJsPath = function(jsFile) {
       let path
       if (IS_DEV_ENV) {
@@ -89,7 +94,7 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
         // In production: resolve path from webpack manifest file
         // We are guaranteed to have a manifest file since webpack compiles in
         // the build
-        path = webpackManifest[jsFile]
+        path = `/${webpackManifest[jsFile]}`
       }
 
       return Url.resolve(staticFilesBase, path)
@@ -97,7 +102,7 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
 
     // Temporary hack while jQuery/Angular dependencies are *not* bundled,
     // instead copied into output directory
-    res.locals.buildCopiedJsAssetPath = function(jsFile, opts = {}) {
+    res.locals.buildCopiedJsAssetPath = function(jsFile) {
       let path
       if (IS_DEV_ENV) {
         // In dev: resolve path to root directory
@@ -108,27 +113,17 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
         // In production: resolve path from webpack manifest file
         // We are guaranteed to have a manifest file since webpack compiles in
         // the build
-        path = webpackManifest[jsFile]
+        path = `/${webpackManifest[jsFile]}`
       }
 
-      if (opts.cdn !== false) {
-        path = Url.resolve(staticFilesBase, path)
-      }
-
-      if (opts.qs) {
-        path = path + '?' + querystring.stringify(opts.qs)
-      }
-
-      return path
+      return Url.resolve(staticFilesBase, path)
     }
 
-    res.locals.mathJaxPath = res.locals.buildCopiedJsAssetPath(
-      'js/libs/mathjax/MathJax.js',
+    res.locals.mathJaxPath = `/js/libs/mathjax/MathJax.js?${querystring.stringify(
       {
-        cdn: false,
-        qs: { config: 'TeX-AMS_HTML,Safe' }
+        config: 'TeX-AMS_HTML,Safe'
       }
-    )
+    )}`
 
     res.locals.lib = PackageVersions.lib
 
@@ -169,7 +164,7 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
         // In production: resolve path from webpack manifest file
         // We are guaranteed to have a manifest file since webpack compiles in
         // the build
-        path = webpackManifest[cssFileName]
+        path = `/${webpackManifest[cssFileName]}`
       }
 
       return Url.resolve(staticFilesBase, path)
@@ -266,6 +261,7 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
 
   webRouter.use(function(req, res, next) {
     res.locals.gaToken = Settings.analytics && Settings.analytics.ga.token
+    res.locals.gaOptimizeId = _.get(Settings, ['analytics', 'gaOptimize', 'id'])
     next()
   })
 
@@ -304,19 +300,6 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
     res.locals.templates = Settings.templateLinks
     next()
   })
-
-  webRouter.use((req, res, next) =>
-    SystemMessageManager.getMessages(function(error, messages) {
-      if (error) {
-        return next(error)
-      }
-      if (messages == null) {
-        messages = []
-      }
-      res.locals.systemMessages = messages
-      next()
-    })
-  )
 
   webRouter.use(function(req, res, next) {
     if (Settings.reloadModuleViewsOnEachRequest) {
@@ -378,6 +361,7 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
       hasSamlFeature: Features.hasFeature('saml'),
       samlInitPath: _.get(Settings, ['saml', 'ukamf', 'initPath']),
       siteUrl: Settings.siteUrl,
+      emailConfirmationDisabled: Settings.emailConfirmationDisabled,
       recaptchaSiteKeyV3:
         Settings.recaptcha != null ? Settings.recaptcha.siteKeyV3 : undefined,
       recaptchaDisabled:
