@@ -114,6 +114,21 @@ module.exports = {
         ]
       },
       {
+        // Load fonts
+        test: /\.(woff|woff2)$/,
+        use: [
+          {
+            loader: 'file-loader',
+            options: {
+              // Output to public/font
+              outputPath: 'fonts',
+              publicPath: '/fonts/',
+              name: '[name].[ext]'
+            }
+          }
+        ]
+      },
+      {
         // These options are necessary for handlebars to have access to helper
         // methods
         test: /\.handlebars$/,
@@ -167,28 +182,12 @@ module.exports = {
         ]
       },
       {
-        // Expose underscore global variable
-        test: path.join(
-          __dirname,
-          `frontend/js/vendor/libs/${PackageVersions.lib('underscore')}.js`
-        ),
+        // Expose lodash global variable
+        test: require.resolve('lodash'),
         use: [
           {
             loader: 'expose-loader',
             options: '_'
-          }
-        ]
-      },
-      {
-        // Expose Algolia global variable
-        test: path.join(
-          __dirname,
-          `frontend/js/vendor/libs/${PackageVersions.lib('algolia')}.js`
-        ),
-        use: [
-          {
-            loader: 'expose-loader',
-            options: 'AlgoliaSearch'
           }
         ]
       }
@@ -198,13 +197,8 @@ module.exports = {
     alias: {
       // Aliases for AMD modules
 
-      // Vendored dependencies in public/src/vendor/libs (e.g. angular)
+      // Shortcut to vendored dependencies in frontend/js/vendor/libs
       libs: path.join(__dirname, 'frontend/js/vendor/libs'),
-      // Use vendored moment (with correct version)
-      moment: path.join(
-        __dirname,
-        `frontend/js/vendor/libs/${PackageVersions.lib('moment')}`
-      ),
       // Enables ace/ace shortcut
       ace: path.join(
         __dirname,
@@ -252,10 +246,11 @@ module.exports = {
       writeToFileEmit: true
     }),
 
-    // Silence warning when loading moment from vendored dependencies as it
-    // attempts to load locales.js file which does not exist (but this is fine
-    // as we don't want to load the large amount of locale data from moment)
-    new webpack.IgnorePlugin(/^\.\/locale$/, /frontend\/js\/vendor\/libs/),
+    // Prevent moment from loading (very large) locale files that aren't used
+    new webpack.IgnorePlugin({
+      resourceRegExp: /^\.\/locale$/,
+      contextRegExp: /moment$/
+    }),
 
     new CopyPlugin([
       {
@@ -274,11 +269,5 @@ module.exports = {
       // to provide support for non-Latin characters
       { from: 'node_modules/pdfjs-dist/cmaps', to: 'js/cmaps' }
     ])
-  ],
-
-  // If underscore is required by another dependency *don't* include in the
-  // bundle and use the relevant global variable instead
-  externals: {
-    underscore: '_'
-  }
+  ]
 }

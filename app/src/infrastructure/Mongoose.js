@@ -39,4 +39,8 @@ if (process.env.MONGOOSE_DEBUG) {
   )
 }
 
+mongoose.plugin(schema => {
+  schema.options.usePushEach = true
+})
+
 module.exports = mongoose

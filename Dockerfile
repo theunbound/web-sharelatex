@@ -1,4 +1,4 @@
-FROM node:10.15.3 as app
+FROM gcr.io/overleaf-ops/node:10.19.0 as app
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ RUN npm install --quiet
 
 COPY . /app
 
-FROM node:10.15.3
+FROM gcr.io/overleaf-ops/node:10.19.0
 
 COPY --from=app /app /app
 
