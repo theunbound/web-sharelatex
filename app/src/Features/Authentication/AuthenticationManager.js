@@ -175,7 +175,7 @@ const AuthenticationManager = {
               // Globalize projects
               Project.updateMany(
                 { owner_ref: { $ne: ObjectId( userId.toString() )}},
-                { $addToSet: { collaborator_refs: ObjectId( userId.toString() )}},
+                { $addToSet: { collaberator_refs: ObjectId( userId.toString() )}},
                 ( error, doc ) => {
                   if ( error ) callback(error);
                   else callback( null, true, userId );
