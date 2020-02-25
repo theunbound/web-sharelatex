@@ -138,7 +138,6 @@ const ProjectController = {
 
   deleteProject(req, res) {
     const projectId = req.params.Project_id
-    const forever = (req.query != null ? req.query.forever : undefined) != null
     const user = AuthenticationController.getSessionUser(req)
     const cb = err => {
       if (err != null) {
@@ -147,16 +146,11 @@ const ProjectController = {
         res.sendStatus(200)
       }
     }
-
-    if (forever) {
-      ProjectDeleter.deleteProject(
-        projectId,
-        { deleterUser: user, ipAddress: req.ip },
-        cb
-      )
-    } else {
-      ProjectDeleter.legacyArchiveProject(projectId, cb)
-    }
+    ProjectDeleter.deleteProject(
+      projectId,
+      { deleterUser: user, ipAddress: req.ip },
+      cb
+    )
   },
 
   archiveProject(req, res, next) {
@@ -588,7 +582,9 @@ const ProjectController = {
             user,
             userAffiliations,
             hasSubscription: results.hasSubscription,
-            isShowingV1Projects: results.v1Projects != null,
+            isShowingV1Projects:
+              results.v1Projects != null &&
+              results.v1Projects.projects.length > 0,
             warnings,
             zipFileSizeLimit: Settings.maxUploadSize
           }

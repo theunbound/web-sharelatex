@@ -62,7 +62,8 @@ describe('Subscriptions', function() {
     describe('when the user has a subscription with recurly', function() {
       beforeEach(function(done) {
         MockRecurlyApi.accounts['mock-account-id'] = this.accounts = {
-          hosted_login_token: 'mock-login-token'
+          hosted_login_token: 'mock-login-token',
+          email: 'mock@email.com'
         }
         MockRecurlyApi.subscriptions[
           'mock-subscription-id'
@@ -138,7 +139,12 @@ describe('Subscriptions', function() {
           tax: 100,
           taxRate: 0.2,
           trial_ends_at: new Date(2018, 6, 7),
-          trialEndsAtFormatted: '7th July 2018'
+          trialEndsAtFormatted: '7th July 2018',
+          account: {
+            account_code: 'mock-account-id',
+            email: 'mock@email.com',
+            hosted_login_token: 'mock-login-token'
+          }
         })
       })
 
@@ -174,6 +180,12 @@ describe('Subscriptions', function() {
             ])
             return done()
           }
+        )
+      })
+
+      it('should return Recurly account email', function() {
+        expect(this.data.personalSubscription.recurly.account.email).to.equal(
+          'mock@email.com'
         )
       })
     })
@@ -430,23 +442,27 @@ describe('Subscriptions', function() {
         MockV1Api.setAffiliations([
           {
             email: 'confirmed-affiliation-email@stanford.example.edu',
+            licence: 'pro_plus',
+            department: 'Math',
+            role: 'Prof',
+            inferred: false,
             institution: {
               name: 'Stanford',
-              licence: 'pro_plus',
               confirmed: true
             }
           },
           {
             email: 'unconfirmed-affiliation-email@harvard.example.edu',
+            licence: 'pro_plus',
             institution: {
               name: 'Harvard',
-              licence: 'pro_plus',
               confirmed: true
             }
           },
           {
             email: 'confirmed-affiliation-email@mit.example.edu',
-            institution: { name: 'MIT', licence: 'pro_plus', confirmed: false }
+            licence: 'pro_plus',
+            institution: { name: 'MIT', confirmed: false }
           }
         ])
         return async.series(
@@ -504,8 +520,17 @@ describe('Subscriptions', function() {
       })
 
       it('should return only the affilations with confirmed institutions, and confirmed emails', function() {
-        return expect(this.data.confirmedMemberInstitutions).to.deep.equal([
-          { name: 'Stanford', licence: 'pro_plus', confirmed: true }
+        return expect(this.data.confirmedMemberAffiliations).to.deep.equal([
+          {
+            licence: 'pro_plus',
+            department: 'Math',
+            role: 'Prof',
+            inferred: false,
+            institution: {
+              name: 'Stanford',
+              confirmed: true
+            }
+          }
         ])
       })
     })

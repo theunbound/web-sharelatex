@@ -154,7 +154,7 @@ module.exports = SubscriptionController = {
           personalSubscription,
           memberGroupSubscriptions,
           managedGroupSubscriptions,
-          confirmedMemberInstitutions,
+          confirmedMemberAffiliations,
           managedInstitutions,
           managedPublishers,
           v1SubscriptionStatus
@@ -177,7 +177,7 @@ module.exports = SubscriptionController = {
             personalSubscription,
             memberGroupSubscriptions,
             managedGroupSubscriptions,
-            confirmedMemberInstitutions,
+            confirmedMemberAffiliations,
             managedInstitutions,
             managedPublishers,
             v1SubscriptionStatus
@@ -324,6 +324,18 @@ module.exports = SubscriptionController = {
         return res.redirect('/user/subscription')
       }
     )
+  },
+
+  updateAccountEmailAddress(req, res, next) {
+    const user = AuthenticationController.getSessionUser(req)
+    RecurlyWrapper.updateAccountEmailAddress(user._id, user.email, function(
+      error
+    ) {
+      if (error) {
+        return next(new HttpErrors.InternalServerError({}).withCause(error))
+      }
+      res.sendStatus(200)
+    })
   },
 
   reactivateSubscription(req, res, next) {
