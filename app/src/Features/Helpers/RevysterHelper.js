@@ -48,17 +48,17 @@ module.exports = RevysterHelper = {
   validateEmail: async(req, res, next) => {
     try {
       if ( await RevysterHelper.isEmailSubscribed(req.body.email) ) {
-          logger.log("Email found on revyster's roster. Registering user.",
-                     req.body.email);
-          next();
-        } else {
-          logger.log("Email not on revyster's roster. Sending 404.",
-                     req.body.email);
-          res.status(404).send({
-            'message': "Den email-adresse ser ikke ud til at være tilmeldt"
-              + " revyster. Prøv en anden, eller skriv til en administrator."
-          });
-        }
+        logger.log("Email found on revyster's roster. Registering user.",
+                   req.body.email);
+        next();
+      } else {
+        logger.log("Email not on revyster's roster. Sending 404.",
+                   req.body.email);
+        res.status(404).send({
+          'message': "Den email-adresse ser ikke ud til at være tilmeldt"
+            + " revyster. Prøv en anden, eller skriv til en administrator."
+        });
+      }
     } catch (error) {
       logger.log("Error getting revyster's roster.");
       next(error);
@@ -113,7 +113,7 @@ module.exports = RevysterHelper = {
         res.on('end', function() {
           var ref = res.statusCode;
           if ( 200 <= ref && ref < 300 ) {
-            resolve( lookForAddresses.next().value.has(email) );
+            resolve( lookForAddresses.next().value.has(email.toLowerCase() ));
           } else {
             reject(res.headers);
           }

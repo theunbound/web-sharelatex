@@ -52,14 +52,11 @@ block content
 										.actions
 											button.btn-primary.btn(
 												type='submit',
-												ng-disabled="registerUnauthFrom.inflight || regusterUnauthForm.email.$error.required"
+												ng-disabled="registerUnauthFrom.inflight || registerUnauthForm.email.$error.required"
 												)
 												span(ng-show='!registerUnauthForm.inflight') Send
 												span(ng-show='registerUnauthForm.inflight') Sender...
 							form-messages(for="registerUnauthForm")
-								.alert.alert-danger(ng-show="regusterUnauthForm.response.error")
-									| 
-									| doot doot
 						h2 Andre email-adresser
 						p
 							| Skriv til en administrator:
