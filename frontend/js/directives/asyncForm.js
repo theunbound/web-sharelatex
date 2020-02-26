@@ -76,10 +76,10 @@ define(['base', 'libs/passfield'], function(App) {
             if (data.redir != null) {
               ga('send', 'event', formName, 'success')
               return (window.location = data.redir)
-            } else if (data.email) {
-              response.message = {
-                text: `En registrerings–mail er sendt til ${data.email}.`
-              }
+            // } else if (data.email) {
+            //   response.message = {
+            //     text: `En registrerings–mail er sendt til ${data.email}.`
+            //   }
             } else if (data.message != null) {
               response.message = data.message
 
