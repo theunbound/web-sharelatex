@@ -13,7 +13,7 @@
  * DS207: Consider shorter variations of null checks
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
-define(['base'], function(App) {
+define(['../../base'], function(App) {
   // We create and provide this as service so that we can access the global ide
   // from within other parts of the angular app.
   App.factory('ide', function(
@@ -50,12 +50,12 @@ define(['base'], function(App) {
       meta.user_id = window.user_id
       meta.project_id = window.project_id
       meta.client_id = __guard__(
-        this.socket != null ? this.socket.socket : undefined,
+        ide.socket != null ? ide.socket.socket : undefined,
         x => x.sessionid
       )
       meta.transport = __guard__(
         __guard__(
-          this.socket != null ? this.socket.socket : undefined,
+          ide.socket != null ? ide.socket.socket : undefined,
           x2 => x2.transport
         ),
         x1 => x1.name
