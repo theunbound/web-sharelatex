@@ -196,7 +196,9 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
     }
     // Don't include the query string parameters, otherwise Google
     // treats ?nocdn=true as the canonical version
-    res.locals.currentUrl = Url.parse(req.originalUrl).pathname
+    const parsedOriginalUrl = Url.parse(req.originalUrl)
+    res.locals.currentUrl = parsedOriginalUrl.pathname
+    res.locals.currentUrlWithQueryParams = parsedOriginalUrl.path
     res.locals.capitalize = function(string) {
       if (string.length === 0) {
         return ''
@@ -321,9 +323,7 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
       chatMessageBorderSaturation: '85%',
       chatMessageBorderLightness: '40%',
       chatMessageBgSaturation: '85%',
-      chatMessageBgLightness: '40%',
-      defaultFontFamily: 'lucida',
-      defaultLineHeight: 'normal'
+      chatMessageBgLightness: '40%'
     }
     next()
   })
@@ -365,7 +365,8 @@ module.exports = function(webRouter, privateApiRouter, publicApiRouter) {
         Settings.recaptcha != null ? Settings.recaptcha.siteKeyV3 : undefined,
       recaptchaDisabled:
         Settings.recaptcha != null ? Settings.recaptcha.disabled : undefined,
-      validRootDocExtensions: Settings.validRootDocExtensions
+      validRootDocExtensions: Settings.validRootDocExtensions,
+      sentryDsn: Settings.sentry != null ? Settings.sentry.publicDSN : undefined
     }
     next()
   })

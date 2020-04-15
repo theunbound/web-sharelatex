@@ -129,9 +129,11 @@ describe('ProjectController', function() {
         }
       }
     ])
-
-    this.SystemMessageManager = {
-      getMessages: sinon.stub().callsArgWith(0, null, [])
+    this.Metrics = {
+      Timer: class {
+        done() {}
+      },
+      inc: sinon.stub()
     }
 
     this.ProjectController = SandboxedModule.require(MODULE_PATH, {
@@ -144,14 +146,8 @@ describe('ProjectController', function() {
           log() {},
           err() {}
         },
-        'metrics-sharelatex': {
-          Timer: class {
-            done() {}
-          },
-          inc() {}
-        },
+        'metrics-sharelatex': this.Metrics,
         '@overleaf/o-error/http': HttpErrors,
-        '../SystemMessages/SystemMessageManager': this.SystemMessageManager,
         './ProjectDeleter': this.ProjectDeleter,
         './ProjectDuplicator': this.ProjectDuplicator,
         './ProjectCreationHandler': this.ProjectCreationHandler,
@@ -377,14 +373,6 @@ describe('ProjectController', function() {
 
   describe('projectListPage', function() {
     beforeEach(function() {
-      this.systemMessages = [
-        { _id: '42', content: 'Hello from the other side!' },
-        { _id: '1337', content: 'Can you read this?' }
-      ]
-      this.SystemMessageManager.getMessages = sinon
-        .stub()
-        .callsArgWith(0, null, this.systemMessages)
-
       this.tags = [
         { name: 1, project_ids: ['1', '2', '3'] },
         { name: 2, project_ids: ['a', '1'] },
@@ -451,14 +439,6 @@ describe('ProjectController', function() {
     it('should send the tags', function(done) {
       this.res.render = (pageName, opts) => {
         opts.tags.length.should.equal(this.tags.length)
-        done()
-      }
-      this.ProjectController.projectListPage(this.req, this.res)
-    })
-
-    it('should send the systemMessages', function(done) {
-      this.res.render = (pageName, opts) => {
-        opts.systemMessages.should.deep.equal(this.systemMessages)
         done()
       }
       this.ProjectController.projectListPage(this.req, this.res)
@@ -1166,6 +1146,81 @@ describe('ProjectController', function() {
       }
       this.ProjectController.loadEditor(this.req, this.res)
     })
+
+    describe('wsUrl', function() {
+      function checkLoadEditorWsMetric(metric) {
+        it(`should inc metric ${metric}`, function(done) {
+          this.res.render = () => {
+            this.Metrics.inc.calledWith(metric).should.equal(true)
+            done()
+          }
+          this.ProjectController.loadEditor(this.req, this.res)
+        })
+      }
+      function checkWsFallback(isBeta) {
+        describe('with ws=fallback', function() {
+          beforeEach(function() {
+            this.req.query = {}
+            this.req.query.ws = 'fallback'
+          })
+          it('should unset the wsUrl', function(done) {
+            this.res.render = (pageName, opts) => {
+              ;(opts.wsUrl || '/socket.io').should.equal('/socket.io')
+              done()
+            }
+            this.ProjectController.loadEditor(this.req, this.res)
+          })
+          checkLoadEditorWsMetric(
+            `load-editor-ws${isBeta ? '-beta' : ''}-fallback`
+          )
+        })
+      }
+
+      beforeEach(function() {
+        this.settings.wsUrl = '/other.socket.io'
+      })
+      it('should set the custom wsUrl', function(done) {
+        this.res.render = (pageName, opts) => {
+          opts.wsUrl.should.equal('/other.socket.io')
+          done()
+        }
+        this.ProjectController.loadEditor(this.req, this.res)
+      })
+      checkLoadEditorWsMetric('load-editor-ws')
+      checkWsFallback(false)
+
+      describe('beta program', function() {
+        beforeEach(function() {
+          this.settings.wsUrlBeta = '/beta.socket.io'
+        })
+        describe('for a normal user', function() {
+          it('should set the normal custom wsUrl', function(done) {
+            this.res.render = (pageName, opts) => {
+              opts.wsUrl.should.equal('/other.socket.io')
+              done()
+            }
+            this.ProjectController.loadEditor(this.req, this.res)
+          })
+          checkLoadEditorWsMetric('load-editor-ws')
+          checkWsFallback(false)
+        })
+
+        describe('for a beta user', function() {
+          beforeEach(function() {
+            this.user.betaProgram = true
+          })
+          it('should set the beta wsUrl', function(done) {
+            this.res.render = (pageName, opts) => {
+              opts.wsUrl.should.equal('/beta.socket.io')
+              done()
+            }
+            this.ProjectController.loadEditor(this.req, this.res)
+          })
+          checkLoadEditorWsMetric('load-editor-ws-beta')
+          checkWsFallback(true)
+        })
+      })
+    })
   })
 
   describe('userProjectsJson', function() {
@@ -1323,11 +1378,6 @@ describe('ProjectController', function() {
           archived: false,
           trashed: false,
           owner_ref: 'defg',
-          tokens: {
-            readAndWrite: '1abcd',
-            readAndWritePrefix: '1',
-            readOnly: 'neiotsranteoia'
-          },
           isV1Project: false
         })
       })
@@ -1359,11 +1409,6 @@ describe('ProjectController', function() {
           archived: true,
           trashed: false,
           owner_ref: 'defg',
-          tokens: {
-            readAndWrite: '1abcd',
-            readAndWritePrefix: '1',
-            readOnly: 'neiotsranteoia'
-          },
           isV1Project: false
         })
       })
@@ -1390,11 +1435,6 @@ describe('ProjectController', function() {
           archived: false,
           trashed: false,
           owner_ref: null,
-          tokens: {
-            readAndWrite: '1abcd',
-            readAndWritePrefix: '1',
-            readOnly: 'neiotsranteoia'
-          },
           isV1Project: false
         })
       })

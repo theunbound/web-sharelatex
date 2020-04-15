@@ -23,12 +23,13 @@ module.exports = ErrorController = {
   handleError(error, req, res, next) {
     const user = AuthenticationController.getSessionUser(req)
     // log errors related to SAML flow
-    if (req.session.saml) {
+    if (req.session && req.session.saml) {
       SamlLogHandler.log(req.session.saml.universityId, req.sessionID, {
         error: {
           message: error && error.message,
           stack: error && error.stack
         },
+        body: req.body,
         path: req.path,
         query: req.query,
         saml: req.session.saml,

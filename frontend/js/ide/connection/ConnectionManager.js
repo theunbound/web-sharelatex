@@ -101,9 +101,20 @@ define([], function() {
 
         // initial connection attempt
         this.updateConnectionManagerState('connecting')
+        let parsedURL
+        try {
+          parsedURL = new URL(this.wsUrl || '/socket.io', window.location)
+        } catch (e) {
+          // hello IE11
+          parsedURL = {
+            origin: null,
+            pathname: '/socket.io'
+          }
+        }
         this.ide.socket = io.connect(
-          this.wsUrl,
+          parsedURL.origin,
           {
+            resource: parsedURL.pathname.slice(1),
             reconnect: false,
             'connect timeout': 30 * 1000,
             'force new connection': true
@@ -258,6 +269,7 @@ The editor will refresh in automatically in 10 seconds.\
             // initial connection
           } else if (state === 'reconnecting') {
             // reconnection after a connection has failed
+            this.stopReconnectCountdownTimer()
             this.$scope.connection.reconnecting = true
             // if reconnecting takes more than 1s (it doesn't, usually) show the
             // 'reconnecting...' warning
@@ -269,6 +281,8 @@ The editor will refresh in automatically in 10 seconds.\
                 this.$scope.connection.stillReconnecting = true
               }
             }, 1000)
+          } else if (state === 'reconnectFailed') {
+            // reconnect attempt failed
           } else if (state === 'authenticating') {
             // socket connection has been established, trying to authenticate
           } else if (state === 'joining') {
@@ -278,10 +292,10 @@ The editor will refresh in automatically in 10 seconds.\
             // project has been joined
           } else if (state === 'waitingCountdown') {
             // disconnected and waiting to reconnect via the countdown timer
-            this.cancelReconnect()
+            this.stopReconnectCountdownTimer()
           } else if (state === 'waitingGracefully') {
             // disconnected and waiting to reconnect gracefully
-            this.cancelReconnect()
+            this.stopReconnectCountdownTimer()
           } else if (state === 'inactive') {
             // disconnected and not trying to reconnect (inactive)
           } else if (state === 'error') {
@@ -444,7 +458,7 @@ Something went wrong connecting to your project. Please refresh if this continue
         })
 
         setTimeout(() => {
-          if (!this.connected) {
+          if (!this.connected && !this.countdownTimeoutId) {
             this.countdownTimeoutId = setTimeout(
               () => this.decreaseCountdown(connectionId),
               1000
@@ -453,8 +467,7 @@ Something went wrong connecting to your project. Please refresh if this continue
         }, 200)
       }
 
-      cancelReconnect() {
-        this.disconnect()
+      stopReconnectCountdownTimer() {
         // clear timeout and set to null so we know there is no countdown running
         if (this.countdownTimeoutId != null) {
           sl_console.log(
@@ -507,6 +520,24 @@ Something went wrong connecting to your project. Please refresh if this continue
         }
         this.updateConnectionManagerState('reconnecting')
         sl_console.log('[ConnectionManager] Starting new connection')
+
+        const removeHandler = () => {
+          this.ide.socket.removeListener('error', handleFailure)
+          this.ide.socket.removeListener('connect', handleSuccess)
+        }
+        const handleFailure = () => {
+          sl_console.log('[ConnectionManager] tryReconnect: failed')
+          removeHandler()
+          this.updateConnectionManagerState('reconnectFailed')
+          this.tryReconnectWithRateLimit({ force: true })
+        }
+        const handleSuccess = () => {
+          sl_console.log('[ConnectionManager] tryReconnect: success')
+          removeHandler()
+        }
+        this.ide.socket.on('error', handleFailure)
+        this.ide.socket.on('connect', handleSuccess)
+
         // use socket.io connect() here to make a single attempt, the
         // reconnect() method makes multiple attempts
         this.ide.socket.socket.connect()

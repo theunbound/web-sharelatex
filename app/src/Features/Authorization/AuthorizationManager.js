@@ -1,15 +1,15 @@
-let AuthorizationManager
 const CollaboratorsGetter = require('../Collaborators/CollaboratorsGetter')
 const CollaboratorsHandler = require('../Collaborators/CollaboratorsHandler')
 const ProjectGetter = require('../Project/ProjectGetter')
 const { User } = require('../../models/User')
 const PrivilegeLevels = require('./PrivilegeLevels')
+const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
 const PublicAccessLevels = require('./PublicAccessLevels')
 const Errors = require('../Errors/Errors')
 const { ObjectId } = require('mongojs')
-const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
+const { promisifyAll } = require('../../util/promises')
 
-module.exports = AuthorizationManager = {
+const AuthorizationManager = {
   isRestrictedUser(userId, privilegeLevel, isTokenMember) {
     if (privilegeLevel === PrivilegeLevels.NONE) {
       return true
@@ -20,7 +20,7 @@ module.exports = AuthorizationManager = {
   },
 
   isRestrictedUserForProject(userId, projectId, token, callback) {
-    this.getPrivilegeLevelForProject(
+    AuthorizationManager.getPrivilegeLevelForProject(
       userId,
       projectId,
       token,
@@ -37,7 +37,11 @@ module.exports = AuthorizationManager = {
             }
             callback(
               null,
-              this.isRestrictedUser(userId, privilegeLevel, isTokenMember)
+              AuthorizationManager.isRestrictedUser(
+                userId,
+                privilegeLevel,
+                isTokenMember
+              )
             )
           }
         )
@@ -163,28 +167,25 @@ module.exports = AuthorizationManager = {
     // Anonymous users can have read-only access to token-based projects,
     // while read-write access must be logged in,
     // unless the `enableAnonymousReadAndWriteSharing` setting is enabled
-    TokenAccessHandler.isValidToken(projectId, token, function(
-      err,
-      isValidReadAndWrite,
-      isValidReadOnly
-    ) {
-      if (err) {
-        return callback(err)
+    TokenAccessHandler.validateTokenForAnonymousAccess(
+      projectId,
+      token,
+      function(err, isValidReadAndWrite, isValidReadOnly) {
+        if (err) {
+          return callback(err)
+        }
+        if (isValidReadOnly) {
+          // Grant anonymous user read-only access
+          return callback(null, PrivilegeLevels.READ_ONLY, false, false)
+        }
+        if (isValidReadAndWrite) {
+          // Grant anonymous user read-and-write access
+          return callback(null, PrivilegeLevels.READ_AND_WRITE, false, false)
+        }
+        // Deny anonymous access
+        callback(null, PrivilegeLevels.NONE, false, false)
       }
-      if (isValidReadOnly) {
-        // Grant anonymous user read-only access
-        return callback(null, PrivilegeLevels.READ_ONLY, false, false)
-      }
-      if (
-        isValidReadAndWrite &&
-        TokenAccessHandler.ANONYMOUS_READ_AND_WRITE_ENABLED
-      ) {
-        // Grant anonymous user read-and-write access
-        return callback(null, PrivilegeLevels.READ_AND_WRITE, false, false)
-      }
-      // Deny anonymous access
-      callback(null, PrivilegeLevels.NONE, false, false)
-    })
+    )
   },
 
   canUserReadProject(userId, projectId, token, callback) {
@@ -280,3 +281,8 @@ module.exports = AuthorizationManager = {
     })
   }
 }
+
+module.exports = AuthorizationManager
+module.exports.promises = promisifyAll(AuthorizationManager, {
+  without: 'isRestrictedUser'
+})

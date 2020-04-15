@@ -64,7 +64,7 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
         if (!project) return acc
 
         // Ignore archived projects as they are not shown in the filter
-        if (!project.archived
+        if (!(project.archived || project.trashed)
             // Don't count projects with tags that are hidden,
             // unless it's the tag we are counting for now.
             && !hiddenTags.some( t => ( t != tag
@@ -85,7 +85,7 @@ define(['base', 'ide/colors/ColorManager'], function(App, ColorManager) {
         const supertag = $scope.tags.find( t => t.selected )
 
         if ( project
-             && !project.archived
+             && !(project.archived || project.trashed)
              && !hiddenTags.some( t => ( t != tag
                                          && project.tags.includes(t) ))
              // ...but also check that we are a subtag.

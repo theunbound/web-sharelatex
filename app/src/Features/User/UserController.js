@@ -8,6 +8,7 @@ const logger = require('logger-sharelatex')
 const metrics = require('metrics-sharelatex')
 const AuthenticationManager = require('../Authentication/AuthenticationManager')
 const AuthenticationController = require('../Authentication/AuthenticationController')
+const Features = require('../../infrastructure/Features')
 const UserSessionsManager = require('./UserSessionsManager')
 const UserUpdater = require('./UserUpdater')
 const SudoModeHandler = require('../SudoMode/SudoModeHandler')
@@ -17,6 +18,53 @@ const HttpErrors = require('@overleaf/o-error/http')
 const EmailHandler = require('../Email/EmailHandler')
 const UrlHelper = require('../Helpers/UrlHelper')
 const { promisify } = require('util')
+
+async function _ensureAffiliation(userId, emailData) {
+  if (emailData.samlProviderId) {
+    await UserUpdater.promises.confirmEmail(userId, emailData.email)
+  } else {
+    await UserUpdater.promises.addAffiliationForNewUser(userId, emailData.email)
+  }
+}
+
+async function ensureAffiliation(user) {
+  if (!Features.hasFeature('affiliations')) {
+    return
+  }
+
+  const flaggedEmails = user.emails.filter(email => email.affiliationUnchecked)
+  if (flaggedEmails.length === 0) {
+    return
+  }
+
+  if (flaggedEmails.length > 1) {
+    logger.error(
+      { userId: user._id },
+      `Unexpected number of flagged emails: ${flaggedEmails.length}`
+    )
+  }
+
+  await _ensureAffiliation(user._id, flaggedEmails[0])
+}
+
+async function ensureAffiliationMiddleware(req, res, next) {
+  let user
+  if (!Features.hasFeature('affiliations') || !req.query.ensureAffiliation) {
+    return next()
+  }
+  const userId = AuthenticationController.getLoggedInUserId(req)
+  try {
+    user = await UserGetter.promises.getUser(userId)
+  } catch (error) {
+    return new Errors.UserNotFoundError({ info: { userId } })
+  }
+  try {
+    await ensureAffiliation(user)
+  } catch (error) {
+    return next(error)
+  }
+  return next()
+}
 
 const UserController = {
   tryDeleteUser(req, res, next) {
@@ -399,7 +447,9 @@ const UserController = {
 }
 
 UserController.promises = {
-  doLogout: promisify(UserController.doLogout)
+  doLogout: promisify(UserController.doLogout),
+  ensureAffiliation,
+  ensureAffiliationMiddleware
 }
 
 module.exports = UserController

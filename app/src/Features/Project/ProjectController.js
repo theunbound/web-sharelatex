@@ -36,7 +36,6 @@ const BrandVariationsHandler = require('../BrandVariations/BrandVariationsHandle
 const { getUserAffiliations } = require('../Institutions/InstitutionsAPI')
 const V1Handler = require('../V1/V1Handler')
 const UserController = require('../User/UserController')
-const SystemMessageManager = require('../SystemMessages/SystemMessageManager')
 
 const _ssoAvailable = (affiliation, session, linkedInstitutionIds) => {
   if (!affiliation.institution) return false
@@ -381,11 +380,9 @@ const ProjectController = {
     const userId = AuthenticationController.getLoggedInUserId(req)
     const currentUser = AuthenticationController.getSessionUser(req)
     let noV1Connection = false
+    let institutionLinkingError
     async.parallel(
       {
-        systemMessages(cb) {
-          SystemMessageManager.getMessages(cb)
-        },
         tags(cb) {
           TagsHandler.getAllTags(userId, cb)
         },
@@ -545,6 +542,16 @@ const ProjectController = {
                 templateKey: 'notification_institution_sso_linked_by_another'
               })
             }
+
+            // Notification: When there is a session error
+            if (samlSession.error) {
+              institutionLinkingError = samlSession.error
+              notificationsInstitution.push({
+                message: samlSession.error.message,
+                templateKey: 'notification_institution_sso_error',
+                tryAgain: samlSession.error.tryAgain
+              })
+            }
           }
           delete req.session.saml
         }
@@ -573,7 +580,6 @@ const ProjectController = {
           const viewModel = {
             title: 'your_projects',
             priority_title: true,
-            systemMessages: results.systemMessages,
             projects,
             tags,
             notifications: notifications || [],
@@ -582,6 +588,7 @@ const ProjectController = {
             user,
             userAffiliations,
             hasSubscription: results.hasSubscription,
+            institutionLinkingError,
             isShowingV1Projects:
               results.v1Projects != null &&
               results.v1Projects.projects.length > 0,
@@ -640,11 +647,6 @@ const ProjectController = {
     }
 
     const projectId = req.params.Project_id
-
-    // record failures to load the custom websocket
-    if ((req.query != null ? req.query.ws : undefined) === 'fallback') {
-      metrics.inc('load-editor-ws-fallback')
-    }
 
     async.auto(
       {
@@ -762,12 +764,15 @@ const ProjectController = {
         const { subscription } = results
         const { brandVariation } = results
 
-        const token = TokenAccessHandler.getRequestToken(req, projectId)
+        const anonRequestToken = TokenAccessHandler.getRequestToken(
+          req,
+          projectId
+        )
         const { isTokenMember } = results
         AuthorizationManager.getPrivilegeLevelForProject(
           userId,
           projectId,
-          token,
+          anonRequestToken,
           (error, privilegeLevel) => {
             let allowedFreeTrial
             if (error != null) {
@@ -792,6 +797,23 @@ const ProjectController = {
             ) {
               allowedFreeTrial = !!subscription.freeTrial.allowed || true
             }
+
+            let wsUrl = Settings.wsUrl
+            let metricName = 'load-editor-ws'
+            if (user.betaProgram && Settings.wsUrlBeta !== undefined) {
+              wsUrl = Settings.wsUrlBeta
+              metricName += '-beta'
+            }
+            if (req.query && req.query.ws === 'fallback') {
+              // `?ws=fallback` will connect to the bare origin, and ignore
+              //   the custom wsUrl. Hence it must load the client side
+              //   javascript from there too.
+              // Not resetting it here would possibly load a socket.io v2
+              //  client and connect to a v0 endpoint.
+              wsUrl = undefined
+              metricName += '-fallback'
+            }
+            metrics.inc(metricName)
 
             res.render('project/editor', {
               title: project.name,
@@ -822,15 +844,15 @@ const ProjectController = {
                 autoPairDelimiters: user.ace.autoPairDelimiters,
                 pdfViewer: user.ace.pdfViewer,
                 syntaxValidation: user.ace.syntaxValidation,
-                fontFamily: user.ace.fontFamily,
-                lineHeight: user.ace.lineHeight,
+                fontFamily: user.ace.fontFamily || 'lucida',
+                lineHeight: user.ace.lineHeight || 'normal',
                 overallTheme: user.ace.overallTheme
               },
               trackChangesState: project.track_changes,
               privilegeLevel,
               chatUrl: Settings.apis.chat.url,
               anonymous,
-              anonymousAccessToken: req._anonymousAccessToken,
+              anonymousAccessToken: anonymous ? anonRequestToken : null,
               isTokenMember,
               isRestrictedTokenMember: AuthorizationManager.isRestrictedUser(
                 userId,
@@ -847,6 +869,7 @@ const ProjectController = {
               brandVariation,
               allowedImageNames: Settings.allowedImageNames || [],
               gitBridgePublicBaseUrl: Settings.gitBridgePublicBaseUrl,
+              wsUrl,
               showSupport: Features.hasFeature('support')
             })
             timer.done()
@@ -957,7 +980,6 @@ const ProjectController = {
       archived,
       trashed,
       owner_ref: project.owner_ref,
-      tokens: project.tokens,
       isV1Project: false
     }
     if (accessLevel === PrivilegeLevels.READ_ONLY && source === Sources.TOKEN) {
