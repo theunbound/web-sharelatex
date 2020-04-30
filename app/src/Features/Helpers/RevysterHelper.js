@@ -172,7 +172,7 @@ module.exports = RevysterHelper = {
         logger.log(user, "Admin user selected for template ownership.");
       }
       let userId = user._id.toString();
-      let [tags] = await promiseWrapMethods(TagsHandler).getAllTags(null);
+      let [tags] = await TagsHandler.promises.getAllTags({ $exists: true });
       let tagNames = tags.map( tag => tag.name );
       logger.log({ tagNames: tagNames }, "Found tags.");
       let taskArray = [];
@@ -183,10 +183,10 @@ module.exports = RevysterHelper = {
                   );
         taskArray.push(( async() => {
           let [[tag], project] = await Promise.all([
-            promiseWrapMethods(TagsHandler).createTag(userId, "Kompilering"),
+            TagsHandler.promises.createTag(userId, "Kompilering"),
             createSingleDocumentProject("revy.sty")
           ]);
-          await promiseWrapMethods(TagsHandler)
+          await TagsHandler.promises
             .addProjectToTag( userId, tag._id, project._id );
           logger.log({ userId: userId,
                        tagId: tag._id,
@@ -201,14 +201,14 @@ module.exports = RevysterHelper = {
         logger.log({ tagNames: tagNames },
                    "Tag 'Skabeloner' not found. Creating.");
         taskArray.push( (async() => {
-          let tagPromise = promiseWrapMethods(TagsHandler)
+          let tagPromise = TagsHandler.promises
               .createTag( userId, "Skabeloner");
           await Promise.all(
-            (["Sang.tex", "Sketch.tex"]).map( async(name) => {
+            ["Sang.tex", "Sketch.tex"].map( async(name) => {
               let project = await createSingleDocumentProject(name);
               let [tag] = await tagPromise;
               logger.log({tag: tag}, "Skabeloner tag");
-              await promiseWrapMethods(TagsHandler)
+              await TagsHandler.promises
                 .addProjectToTag( userId, tag._id, project._id );
               logger.log({ userId: userId,
                            tagId: tag._id,
@@ -216,7 +216,7 @@ module.exports = RevysterHelper = {
                            projectName: project.name
                          }, "New project"
                         ); 
-            })());
+            }));
         })());
       }
       
