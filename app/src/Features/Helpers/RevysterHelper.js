@@ -172,7 +172,7 @@ module.exports = RevysterHelper = {
         logger.log(user, "Admin user selected for template ownership.");
       }
       let userId = user._id.toString();
-      let [tags] = await TagsHandler.promises.getAllTags({ $exists: true });
+      let tags = await TagsHandler.promises.getAllTags({ $exists: true });
       let tagNames = tags.map( tag => tag.name );
       logger.log({ tagNames: tagNames }, "Found tags.");
       let taskArray = [];
