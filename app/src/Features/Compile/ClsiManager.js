@@ -472,16 +472,6 @@ const ClsiManager = {
   async _buildRequestWithTagsEnvironment(projectId, options, callback) {
     const localError = Error("Stop _buildRequestWithTagsEnvironment");
 
-    function asyncGetAllTags( userId ) {
-      return new Promise( (resolve, reject) => {
-        TagsHandler.getAllTags( userId, (err, allTags, groupedByProject) => {
-          if ( err != null )
-            reject(err);
-          else
-            resolve([allTags, groupedByProject]);
-        });
-      });
-    };
     var asyncBuildRequest = (projectId, options) => {
       return new Promise( (resolve, reject) => {
         this._buildRequest(projectId, options, (error, request) => {
@@ -499,15 +489,13 @@ const ClsiManager = {
         options: options
       }, "Creating combined compile request for compile environment.");
       var projectRequest = asyncBuildRequest(projectId, options);
-      var tags = await asyncGetAllTags();
+      var tags = await TagsHandler.promises.getAllTags({ $exists: true });
       logger.log( {
-        tagNames: tags[0].map( tag => tag.name )
+        tagNames: tags.map( tag => tag.name )
       }, "Tag names recieved");
-      let environmentRequests = tags[0]
+      let environmentRequests = tags
           .filter( tag => tag.name == "Kompilering" )
-          .reduce( (a, tag) => {
-            return a.concat(tag.project_ids);
-          }, [])
+          .reduce( (a, tag) => a.concat( tag.project_ids ), [] )
           .filter( id => id != projectId )
           .map( id => asyncBuildRequest( id, options ));
       var requests = await Promise.all([ projectRequest,
