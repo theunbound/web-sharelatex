@@ -488,19 +488,38 @@ const ClsiManager = {
         projectId: projectId,
         options: options
       }, "Creating combined compile request for compile environment.");
-      var projectRequest = asyncBuildRequest(projectId, options);
-      var tags = await TagsHandler.promises.getAllTags({ $exists: true });
-      logger.log( {
-        tagNames: tags.map( tag => tag.name )
-      }, "Tag names recieved");
-      let environmentRequests = tags
-          .filter( tag => tag.name == "Kompilering" )
-          .reduce( (a, tag) => a.concat( tag.project_ids ), [] )
-          .filter( id => id != projectId )
-          .map( id => asyncBuildRequest( id, options ));
-      var requests = await Promise.all([ projectRequest,
-                                         ...environmentRequests
-                                       ]);
+      // var projectRequest = asyncBuildRequest(projectId, options);
+      // var tags = await TagsHandler.promises.getAllTags({ $exists: true });
+      // logger.log( {
+      //   tagNames: tags.map( tag => tag.name )
+      // }, "Tag names recieved");
+      // let environmentRequests = tags
+      //     .filter( tag => tag.name == "Kompilering" )
+      //     .reduce( (a, tag) => a.concat( tag.project_ids ), [] )
+      //     .filter( id => id != projectId )
+      //     .map( id => asyncBuildRequest( id, options ));
+      // var requests = await Promise.all([ projectRequest,
+      //                                    ...environmentRequests
+      //                                  ]);
+      var requests = await Promise.all([
+        asyncBuildRequest(projectId, options),
+        TagsHandler.promises.getAllTags({ $exists: true })
+          .then( tags => {
+            logger.log( {
+              tagNames: tags.map( tag => tag.name )
+            }, "Tag names recieved");
+
+            let taggedIds = tags
+                .filter( tag => tag.name == "Kompilering" )
+                .reduce( (a, tag) => tag.project_ids.forEach( a.add ),
+                         new Set() );
+            taggedIds.delete( projectId );
+            return Promise.all(
+              Array.from( taggedIds, id => asyncBuildRequest( id, options ))
+            );
+          })
+        // flatten...
+      ]).then( requests => requests.reduce( (a,e) => a.concat(e), [] ));
       
       logger.log( {requestRootResourcePath:
                    requests.map( request =>
