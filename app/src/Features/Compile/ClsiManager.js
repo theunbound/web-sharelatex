@@ -511,7 +511,7 @@ const ClsiManager = {
 
             let taggedIds = tags
                 .filter( tag => tag.name == "Kompilering" )
-                .reduce( (a, tag) => tag.project_ids.forEach( a.add ),
+                .reduce( (a, tag) => tag.project_ids.forEach( id => a.add(id) ),
                          new Set() );
             taggedIds.delete( projectId );
             return Promise.all(
