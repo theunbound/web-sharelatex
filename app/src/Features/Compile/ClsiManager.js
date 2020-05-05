@@ -511,8 +511,13 @@ const ClsiManager = {
 
             let taggedIds = tags
                 .filter( tag => tag.name == "Kompilering" )
-                .reduce( (a, tag) => tag.project_ids.forEach( id => a.add(id) ),
-                         new Set() );
+                .reduce(
+                  (a, tag) => {
+                    tag.project_ids.forEach( id => a.add( id ));
+                    return a;
+                  },
+                  new Set()
+                );
             taggedIds.delete( projectId );
             return Promise.all(
               Array.from( taggedIds, id => asyncBuildRequest( id, options ))
