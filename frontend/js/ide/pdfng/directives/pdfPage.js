@@ -2,7 +2,6 @@
     max-len,
     new-cap,
     no-return-assign,
-    no-undef,
 */
 // TODO: This file was created by bulk-decaffeinate.
 // Fix any style issues and re-enable lint.
@@ -14,17 +13,18 @@
  * DS207: Consider shorter variations of null checks
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
-define(['../../../base'], App =>
-  // App = angular.module 'pdfPage', ['pdfHighlights']
+import App from '../../../base'
 
-  App.directive('pdfPage', ($timeout, pdfHighlights, pdfSpinner) => ({
+export default App.directive(
+  'pdfPage',
+  ($timeout, pdfHighlights, pdfSpinner) => ({
     require: '^pdfViewer',
     template: `\
 <div class="plv-page-view page-view">
-	<div class="pdf-canvas pdfng-empty"></div>
-	<div class="plv-text-layer text-layer"></div>
-	<div class="plv-annotations-layer annotations-layer"></div>
-	<div class="plv-highlights-layer highlights-layer"></div>
+  <div class="pdf-canvas pdfng-empty"></div>
+  <div class="plv-text-layer text-layer"></div>
+  <div class="plv-annotations-layer annotations-layer"></div>
+  <div class="plv-highlights-layer highlights-layer"></div>
 </div>\
 `,
     link(scope, element, attrs, ctrl) {
@@ -163,4 +163,5 @@ define(['../../../base'], App =>
         }
       })
     }
-  })))
+  })
+)

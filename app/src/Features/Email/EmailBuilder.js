@@ -1,14 +1,12 @@
 const _ = require('underscore')
 const settings = require('settings-sharelatex')
 const marked = require('marked')
+const moment = require('moment')
+const EmailMessageHelper = require('./EmailMessageHelper')
 const StringHelper = require('../Helpers/StringHelper')
-const BaseWithHeaderEmailLayout = require(`./Layouts/${
-  settings.brandPrefix
-}BaseWithHeaderEmailLayout`)
+const BaseWithHeaderEmailLayout = require(`./Layouts/BaseWithHeaderEmailLayout`)
 const SpamSafe = require('./SpamSafe')
-const SingleCTAEmailBody = require(`./Bodies/${
-  settings.brandPrefix
-}SingleCTAEmailBody`)
+const SingleCTAEmailBody = require(`./Bodies/SingleCTAEmailBody`)
 const NoCTAEmailBody = require(`./Bodies/NoCTAEmailBody`)
 
 function CTAEmailTemplate(content) {
@@ -62,8 +60,8 @@ function NoCTAEmailTemplate(content) {
   if (content.greeting == null) {
     content.greeting = () => 'Hi,'
   }
-  if (content.secondaryMessage == null) {
-    content.secondaryMessage = () => ''
+  if (!content.message) {
+    throw new Error('missing message')
   }
   return {
     subject(opts) {
@@ -73,10 +71,9 @@ function NoCTAEmailTemplate(content) {
     plainTextTemplate(opts) {
       return `\
 ${content.greeting(opts)}
-${content.message(opts).trim()}
-${(typeof content.secondaryMessage === 'function'
-        ? content.secondaryMessage(opts).trim()
-        : undefined) || ''}
+
+${content.message(opts, true).join('\r\n\r\n')}
+
 Regards,
 The ${settings.appName} Team - ${settings.siteUrl}\
 `
@@ -86,12 +83,7 @@ The ${settings.appName} Team - ${settings.siteUrl}\
         title:
           typeof content.title === 'function' ? content.title(opts) : undefined,
         greeting: content.greeting(opts),
-        message: marked(content.message(opts).trim()),
-        secondaryMessage: marked(content.secondaryMessage(opts).trim()),
-        gmailGoToAction:
-          typeof content.gmailGoToAction === 'function'
-            ? content.gmailGoToAction(opts)
-            : undefined,
+        message: content.message(opts),
         StringHelper
       })
     }
@@ -175,9 +167,9 @@ templates.canceledSubscription = CTAEmailTemplate({
   },
   message() {
     return `\
-I'm sorry to see you cancelled your ${
+We are sorry to see you cancelled your ${
       settings.appName
-    } premium account. Would you mind giving us some feedback on what the site is lacking at the moment via this quick survey?\
+    } premium subscription. Would you mind giving us some feedback on what the site is lacking at the moment via this quick survey?\
 `
   },
   secondaryMessage() {
@@ -187,7 +179,7 @@ I'm sorry to see you cancelled your ${
     return 'Leave Feedback'
   },
   ctaURL(opts) {
-    return 'https://docs.google.com/forms/d/e/1FAIpQLScqU6Je1r4Afz6ul6oY0RAfN7RabdWv_oL1u7Rj1YBmXS4fiQ/viewform?usp=sf_link'
+    return 'https://docs.google.com/forms/d/e/1FAIpQLSfa7z_s-cucRRXm70N4jEcSbFsZeb0yuKThHGQL8ySEaQzF0Q/viewform?usp=sf_link'
   }
 })
 
@@ -230,20 +222,6 @@ If you didn't request a password reset, let us know.\
   },
   ctaURL(opts) {
     return opts.setNewPasswordUrl
-  }
-})
-
-templates.passwordChanged = NoCTAEmailTemplate({
-  subject(opts) {
-    return `Password Changed - ${settings.appName}`
-  },
-  title(opts) {
-    return `Password Changed`
-  },
-  message(opts) {
-    return `We're contacting you to notify you that your password has been set or changed.
-
-If you have recently set your password for the first time, or if you just changed your password, you don't need to take any further action. If you didn't set or change your password, please contact us.`
   }
 })
 
@@ -476,38 +454,6 @@ If you have any questions, you can contact our support team by reply.\
   }
 })
 
-templates.emailThirdPartyIdentifierLinked = NoCTAEmailTemplate({
-  subject(opts) {
-    return `Your ${settings.appName} account is now linked with ${
-      opts.provider
-    }`
-  },
-  title(opts) {
-    return `Accounts Linked`
-  },
-  message(opts) {
-    let message = `We're contacting you to notify you that your ${opts.provider}
-    account is now linked to your ${settings.appName} account.`
-    return message
-  }
-})
-
-templates.emailThirdPartyIdentifierUnlinked = NoCTAEmailTemplate({
-  subject(opts) {
-    return `Your ${settings.appName} account is no longer linked with ${
-      opts.provider
-    }`
-  },
-  title(opts) {
-    return `Accounts No Longer Linked`
-  },
-  message(opts) {
-    let message = `We're contacting you to notify you that your ${opts.provider}
-    account is no longer linked with your ${settings.appName} account.`
-    return message
-  }
-})
-
 templates.ownershipTransferConfirmationPreviousOwner = NoCTAEmailTemplate({
   subject(opts) {
     return `Project ownership transfer - ${settings.appName}`
@@ -518,19 +464,22 @@ templates.ownershipTransferConfirmationPreviousOwner = NoCTAEmailTemplate({
     )
     return `${projectName} - Owner change`
   },
-  message(opts) {
+  message(opts, isPlainText) {
     const nameAndEmail = _.escape(
       _formatUserNameAndEmail(opts.newOwner, 'a collaborator')
     )
     const projectName = _.escape(
       SpamSafe.safeProjectName(opts.project.name, 'your project')
     )
-    return `\
-As per your request, we have made ${nameAndEmail} the owner of ${projectName}.
-
-If you haven't asked to change the owner of **${projectName}**, please get in touch
-with us via ${settings.adminEmail}.
-`
+    const projectNameDisplay = isPlainText
+      ? projectName
+      : `<b>${projectName}</b>`
+    return [
+      `As per your request, we have made ${nameAndEmail} the owner of ${projectNameDisplay}.`,
+      `If you haven't asked to change the owner of ${projectNameDisplay}, please get in touch with us via ${
+        settings.adminEmail
+      }.`
+    ]
   }
 })
 
@@ -564,6 +513,105 @@ manage ${projectName} sharing settings.
       settings.siteUrl
     }/project/${opts.project._id.toString()}`
     return projectUrl
+  }
+})
+
+templates.userOnboardingEmail = NoCTAEmailTemplate({
+  subject(opts) {
+    return `Getting more out of ${settings.appName}`
+  },
+  greeting(opts) {
+    return ''
+  },
+  title(opts) {
+    return `Getting more out of ${settings.appName}`
+  },
+  message(opts, isPlainText) {
+    const learnLatexLink = EmailMessageHelper.displayLink(
+      'Learn LaTeX in 30 minutes',
+      `${
+        settings.siteUrl
+      }/learn/latex/Learn_LaTeX_in_30_minutes?utm_source=overleaf&utm_medium=email&utm_campaign=onboarding`,
+      isPlainText
+    )
+    const templatesLinks = EmailMessageHelper.displayLink(
+      'Find a beautiful template',
+      `${
+        settings.siteUrl
+      }/latex/templates?utm_source=overleaf&utm_medium=email&utm_campaign=onboarding`,
+      isPlainText
+    )
+    const collaboratorsLink = EmailMessageHelper.displayLink(
+      'Work with your collaborators',
+      `${
+        settings.siteUrl
+      }/learn/how-to/Sharing_a_project?utm_source=overleaf&utm_medium=email&utm_campaign=onboarding`,
+      isPlainText
+    )
+    const siteLink = EmailMessageHelper.displayLink(
+      'www.overleaf.com',
+      settings.siteUrl,
+      isPlainText
+    )
+    const userSettingsLink = EmailMessageHelper.displayLink(
+      'here',
+      `${settings.siteUrl}/user/settings`,
+      isPlainText
+    )
+    return [
+      `Thanks for signing up for ${
+        settings.appName
+      } recently. We hope you've been finding it useful! Here are some key features to help you get the most out of the service:`,
+      `${learnLatexLink}: In this tutorial we provide a quick and easy first introduction to LaTeX with no prior knowledge required. By the time you are finished, you will have written your first LaTeX document!`,
+      `${templatesLinks}: If you're looking for a template or example to get started, we've a large selection available in our template gallery, including CVs, project reports, journal articles and more.`,
+      `${collaboratorsLink}: One of the key features of Overleaf is the ability to share projects and collaborate on them with other users. Find out how to share your projecs with your colleagues in this quick how-to guide.`,
+      `If you have any questions, please let us know, and thanks again for using Overleaf.`,
+      `John`,
+      `Dr John Hammersley <br />Co-founder & CEO <br />${siteLink}<hr>`,
+      `Don't want onboarding emails like this from us? Don't worry, this is the only one. If you've previously subscribed to emails about product offers and company news and events, you can unsubscribe ${userSettingsLink}.`
+    ]
+  }
+})
+
+templates.securityAlert = NoCTAEmailTemplate({
+  subject(opts) {
+    return `Overleaf security note: ${opts.action}`
+  },
+  title(opts) {
+    return opts.action.charAt(0).toUpperCase() + opts.action.slice(1)
+  },
+  message(opts, isPlainText) {
+    const dateFormatted = moment().format('dddd D MMMM YYYY')
+    const timeFormatted = moment().format('HH:mm')
+    const helpLink = EmailMessageHelper.displayLink(
+      'quick guide',
+      `${settings.siteUrl}/learn/how-to/Keeping_your_account_secure`,
+      isPlainText
+    )
+
+    const actionDescribed = EmailMessageHelper.cleanHTML(
+      opts.actionDescribed,
+      isPlainText
+    )
+
+    if (!opts.message) {
+      opts.message = []
+    }
+    const message = opts.message.map(m => {
+      return EmailMessageHelper.cleanHTML(m, isPlainText)
+    })
+
+    return [
+      `We are writing to let you know that ${actionDescribed} on ${dateFormatted} at ${timeFormatted} GMT.`,
+      ...message,
+      `If this was you, you can ignore this email.`,
+      `If this was not you, we recommend getting in touch with our support team at ${
+        settings.adminEmail
+      } to report this as potentially suspicious activity on your account.`,
+      `We also encourage you to read our ${helpLink} to keeping your ${
+        settings.appName
+      } account safe.`
+    ]
   }
 })
 

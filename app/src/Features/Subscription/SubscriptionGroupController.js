@@ -12,6 +12,7 @@
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
 const SubscriptionGroupHandler = require('./SubscriptionGroupHandler')
+const OError = require('@overleaf/o-error')
 const logger = require('logger-sharelatex')
 const SubscriptionLocator = require('./SubscriptionLocator')
 const AuthenticationController = require('../Authentication/AuthenticationController')
@@ -31,21 +32,24 @@ module.exports = {
       userToRemove_id,
       function(err) {
         if (err != null) {
-          logger.warn(
-            { err, subscriptionId: subscription._id, userToRemove_id },
-            'error removing user from group'
-          )
+          OError.tag(err, 'error removing user from group', {
+            subscriptionId: subscription._id,
+            userToRemove_id
+          })
           return next(err)
         }
-        return res.send()
+        return res.sendStatus(200)
       }
     )
   },
 
   removeSelfFromGroup(req, res, next) {
-    const adminUserId = req.query.admin_user_id
+    const subscriptionId = req.query.subscriptionId
     const userToRemove_id = AuthenticationController.getLoggedInUserId(req)
-    return getManagedSubscription(adminUserId, function(error, subscription) {
+    return SubscriptionLocator.getSubscription(subscriptionId, function(
+      error,
+      subscription
+    ) {
       if (error != null) {
         return next(error)
       }
@@ -56,44 +60,14 @@ module.exports = {
         function(err) {
           if (err != null) {
             logger.err(
-              { err, userToRemove_id, adminUserId },
+              { err, userToRemove_id, subscriptionId },
               'error removing self from group'
             )
             return res.sendStatus(500)
           }
-          return res.send()
+          return res.sendStatus(200)
         }
       )
     })
-  },
-
-  // legacy route
-  redirectToSubscriptionGroupAdminPage(req, res, next) {
-    const user_id = AuthenticationController.getLoggedInUserId(req)
-    return getManagedSubscription(user_id, function(error, subscription) {
-      if (error != null) {
-        return next(error)
-      }
-      if (!(subscription != null ? subscription.groupPlan : undefined)) {
-        return res.redirect('/user/subscription')
-      }
-      return res.redirect(`/manage/groups/${subscription._id}/members`)
-    })
   }
 }
-
-var getManagedSubscription = (managerId, callback) =>
-  SubscriptionLocator.findManagedSubscription(managerId, function(
-    err,
-    subscription
-  ) {
-    if (err) {
-      return callback(err)
-    } else if (!subscription) {
-      return callback(
-        new Error(`No subscription found managed by user ${managerId}`)
-      )
-    }
-
-    return callback(null, subscription)
-  })

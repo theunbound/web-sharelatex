@@ -21,6 +21,14 @@ const modulePath = require('path').join(
 describe('TpdsController', function() {
   beforeEach(function() {
     this.TpdsUpdateHandler = {}
+    this.AuthenticationController = {
+      getLoggedInUserId: sinon.stub().returns('user-id')
+    }
+    this.TpdsQueueManager = {
+      promises: {
+        getQueues: sinon.stub().returns('queues')
+      }
+    }
     this.TpdsController = SandboxedModule.require(modulePath, {
       globals: {
         console: console
@@ -31,9 +39,13 @@ describe('TpdsController', function() {
         '../Notifications/NotificationsBuilder': (this.NotificationsBuilder = {
           tpdsFileLimit: sinon.stub().returns({ create: sinon.stub() })
         }),
+        '../Authentication/AuthenticationController': this
+          .AuthenticationController,
+        './TpdsQueueManager': this.TpdsQueueManager,
         'logger-sharelatex': {
           log() {},
           warn() {},
+          info() {},
           err() {}
         },
         'metrics-sharelatex': {
@@ -96,6 +108,28 @@ describe('TpdsController', function() {
       }
       this.TpdsController.mergeUpdate(req, res)
       res.sendStatus.calledWith(500).should.equal(true)
+    })
+
+    it('should return a 409 error when the project is archived', function() {
+      const path = '/projectName/here.txt'
+      const req = {
+        pause() {},
+        params: { 0: path, user_id: this.user_id },
+        session: {
+          destroy() {}
+        },
+        headers: {
+          'x-sl-update-source': (this.source = 'dropbox')
+        }
+      }
+      this.TpdsUpdateHandler.newUpdate = sinon
+        .stub()
+        .callsArgWith(5, new Errors.ProjectIsArchivedOrTrashedError())
+      const res = {
+        sendStatus: sinon.stub()
+      }
+      this.TpdsController.mergeUpdate(req, res)
+      res.sendStatus.calledWith(409).should.equal(true)
     })
 
     it('should return a 400 error when the project is too big', function() {
@@ -264,6 +298,48 @@ describe('TpdsController', function() {
 
     it('should return a success', function() {
       this.res.sendStatus.calledWith(200).should.equal(true)
+    })
+  })
+
+  describe('getQueues', function() {
+    beforeEach(function() {
+      this.req = {}
+      this.res = { json: sinon.stub() }
+      this.next = sinon.stub()
+    })
+
+    describe('success', function() {
+      beforeEach(async function() {
+        await this.TpdsController.getQueues(this.req, this.res, this.next)
+      })
+
+      it('should use userId from session', function() {
+        this.AuthenticationController.getLoggedInUserId.should.have.been
+          .calledOnce
+        this.TpdsQueueManager.promises.getQueues.should.have.been.calledWith(
+          'user-id'
+        )
+      })
+
+      it('should call json with response', function() {
+        this.res.json.should.have.been.calledWith('queues')
+        this.next.should.not.have.been.called
+      })
+    })
+
+    describe('error', function() {
+      beforeEach(async function() {
+        this.err = new Error()
+        this.TpdsQueueManager.promises.getQueues = sinon
+          .stub()
+          .rejects(this.err)
+        await this.TpdsController.getQueues(this.req, this.res, this.next)
+      })
+
+      it('should call next with error', function() {
+        this.res.json.should.not.have.been.called
+        this.next.should.have.been.calledWith(this.err)
+      })
     })
   })
 })

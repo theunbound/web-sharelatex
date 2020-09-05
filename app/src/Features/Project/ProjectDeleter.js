@@ -1,3 +1,4 @@
+const _ = require('lodash')
 const { db, ObjectId } = require('../../infrastructure/mongojs')
 const { callbackify } = require('util')
 const { Project } = require('../../models/Project')
@@ -13,10 +14,12 @@ const CollaboratorsGetter = require('../Collaborators/CollaboratorsGetter')
 const DocstoreManager = require('../Docstore/DocstoreManager')
 const EditorRealTimeController = require('../Editor/EditorRealTimeController')
 const HistoryManager = require('../History/HistoryManager')
+const FilestoreHandler = require('../FileStore/FileStoreHandler')
 const moment = require('moment')
 const { promiseMapWithLimit } = require('../../util/promises')
 
 const EXPIRE_PROJECTS_AFTER_DAYS = 90
+const PROJECT_EXPIRATION_BATCH_SIZE = 10000
 
 module.exports = {
   markAsDeletedByExternalSource: callbackify(markAsDeletedByExternalSource),
@@ -78,14 +81,22 @@ async function deleteUsersProjects(userId) {
 }
 
 async function expireDeletedProjectsAfterDuration() {
-  const deletedProjects = await DeletedProject.find({
-    'deleterData.deletedAt': {
-      $lt: new Date(moment().subtract(EXPIRE_PROJECTS_AFTER_DAYS, 'days'))
+  const deletedProjects = await DeletedProject.find(
+    {
+      'deleterData.deletedAt': {
+        $lt: new Date(moment().subtract(EXPIRE_PROJECTS_AFTER_DAYS, 'days'))
+      },
+      project: { $ne: null }
     },
-    project: { $ne: null }
-  })
-  for (const deletedProject of deletedProjects) {
-    await expireDeletedProject(deletedProject.deleterData.deletedProjectId)
+    { 'deleterData.deletedProjectId': 1 }
+  ).limit(PROJECT_EXPIRATION_BATCH_SIZE)
+  const projectIds = _.shuffle(
+    deletedProjects.map(
+      deletedProject => deletedProject.deleterData.deletedProjectId
+    )
+  )
+  for (const projectId of projectIds) {
+    await expireDeletedProject(projectId)
   }
 }
 
@@ -238,7 +249,7 @@ async function deleteProject(projectId, options = {}) {
   logger.log({ project_id: projectId }, 'successfully deleted project')
 }
 
-async function undeleteProject(projectId) {
+async function undeleteProject(projectId, options = {}) {
   let deletedProject = await DeletedProject.findOne({
     'deleterData.deletedProjectId': projectId
   }).exec()
@@ -252,6 +263,10 @@ async function undeleteProject(projectId) {
   }
 
   let restored = new Project(deletedProject.project)
+
+  if (options.userId) {
+    restored.owner_ref = options.userId
+  }
 
   // if we're undeleting, we want the document to show up
   restored.name = await ProjectDetailsHandler.promises.generateUniqueName(
@@ -297,6 +312,7 @@ async function expireDeletedProject(projectId) {
 
     await DocstoreManager.promises.destroyProject(deletedProject.project._id)
     await HistoryManager.promises.deleteProject(deletedProject.project._id)
+    await FilestoreHandler.promises.deleteProject(deletedProject.project._id)
 
     await DeletedProject.update(
       {

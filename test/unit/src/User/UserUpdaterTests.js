@@ -21,7 +21,10 @@ describe('UserUpdater', function() {
     this.UserGetter = {
       getUserEmail: sinon.stub(),
       getUserByAnyEmail: sinon.stub(),
-      ensureUniqueEmailAddress: sinon.stub()
+      ensureUniqueEmailAddress: sinon.stub(),
+      promises: {
+        getUser: sinon.stub()
+      }
     }
     this.logger = {
       error: sinon.stub(),
@@ -31,8 +34,16 @@ describe('UserUpdater', function() {
     this.addAffiliation = sinon.stub().yields()
     this.removeAffiliation = sinon.stub().callsArgWith(2, null)
     this.refreshFeatures = sinon.stub().yields()
-    this.NewsletterManager = { changeEmail: sinon.stub() }
-    this.RecurlyWrapper = { updateAccountEmailAddress: sinon.stub() }
+    this.NewsletterManager = {
+      promises: {
+        changeEmail: sinon.stub()
+      }
+    }
+    this.RecurlyWrapper = {
+      promises: {
+        updateAccountEmailAddress: sinon.stub()
+      }
+    }
     this.UserUpdater = SandboxedModule.require(modulePath, {
       globals: {
         console: console
@@ -48,6 +59,11 @@ describe('UserUpdater', function() {
           addAffiliation: this.addAffiliation,
           removeAffiliation: this.removeAffiliation
         },
+        '../Email/EmailHandler': (this.EmailHandler = {
+          promises: {
+            sendEmail: sinon.stub()
+          }
+        }),
         '../../infrastructure/Features': (this.Features = {
           hasFeature: sinon.stub().returns(false)
         }),
@@ -57,7 +73,12 @@ describe('UserUpdater', function() {
         'settings-sharelatex': (this.settings = {}),
         request: (this.request = {}),
         '../Newsletter/NewsletterManager': this.NewsletterManager,
-        '../Subscription/RecurlyWrapper': this.RecurlyWrapper
+        '../Subscription/RecurlyWrapper': this.RecurlyWrapper,
+        './UserAuditLogHandler': (this.UserAuditLogHandler = {
+          promises: {
+            addEntry: sinon.stub().resolves()
+          }
+        })
       }
     })
 
@@ -98,9 +119,8 @@ describe('UserUpdater', function() {
       this.UserUpdater.addAffiliationForNewUser(
         this.stubbedUser._id,
         this.newEmail,
-        (error, updated) => {
+        error => {
           should.not.exist(error)
-          expect(updated).to.deep.equal({ n: 1, nModified: 1, ok: 1 })
           sinon.assert.calledOnce(this.UserUpdater.updateUser)
           sinon.assert.calledWithMatch(
             this.UserUpdater.updateUser,
@@ -115,6 +135,10 @@ describe('UserUpdater', function() {
 
   describe('changeEmailAddress', function() {
     beforeEach(function() {
+      this.auditLog = {
+        initiatorId: 'abc123',
+        ipAddress: '0:0:0:0'
+      }
       this.UserGetter.getUserEmail.callsArgWith(1, null, this.stubbedUser.email)
       this.UserUpdater.addEmailAddress = sinon.stub().callsArgWith(2)
       this.UserUpdater.setDefaultEmailAddress = sinon.stub().yields()
@@ -125,13 +149,20 @@ describe('UserUpdater', function() {
       this.UserUpdater.changeEmailAddress(
         this.stubbedUser._id,
         this.newEmail,
+        this.auditLog,
         err => {
           should.not.exist(err)
           this.UserUpdater.addEmailAddress
             .calledWith(this.stubbedUser._id, this.newEmail)
             .should.equal(true)
           this.UserUpdater.setDefaultEmailAddress
-            .calledWith(this.stubbedUser._id, this.newEmail)
+            .calledWith(
+              this.stubbedUser._id,
+              this.newEmail,
+              true,
+              this.auditLog,
+              true
+            )
             .should.equal(true)
           this.UserUpdater.removeEmailAddress
             .calledWith(this.stubbedUser._id, this.stubbedUser.email)
@@ -142,10 +173,15 @@ describe('UserUpdater', function() {
     })
 
     it('validates email', function(done) {
-      this.UserUpdater.changeEmailAddress(this.stubbedUser._id, 'foo', err => {
-        should.exist(err)
-        done()
-      })
+      this.UserUpdater.changeEmailAddress(
+        this.stubbedUser._id,
+        'foo',
+        this.auditLog,
+        err => {
+          should.exist(err)
+          done()
+        }
+      )
     })
 
     it('handle error', function(done) {
@@ -153,6 +189,7 @@ describe('UserUpdater', function() {
       this.UserUpdater.changeEmailAddress(
         this.stubbedUser._id,
         this.newEmail,
+        this.auditLog,
         err => {
           should.exist(err)
           done()
@@ -212,22 +249,6 @@ describe('UserUpdater', function() {
           args[0].should.equal(this.stubbedUser._id)
           args[1].should.equal(this.newEmail)
           args[2].should.equal(affiliationOptions)
-          done()
-        }
-      )
-    })
-
-    it('handle error', function(done) {
-      this.UserUpdater.updateUser = sinon
-        .stub()
-        .callsArgWith(2, new Error('nope'))
-
-      this.UserUpdater.addEmailAddress(
-        this.stubbedUser._id,
-        this.newEmail,
-        err => {
-          this.logger.warn.called.should.equal(true)
-          should.exist(err)
           done()
         }
       )
@@ -293,6 +314,18 @@ describe('UserUpdater', function() {
       )
     })
 
+    it('refresh features', function(done) {
+      this.UserUpdater.removeEmailAddress(
+        this.stubbedUser._id,
+        this.newEmail,
+        err => {
+          should.not.exist(err)
+          sinon.assert.calledWith(this.refreshFeatures, this.stubbedUser._id)
+          done()
+        }
+      )
+    })
+
     it('handle error', function(done) {
       this.UserUpdater.updateUser = sinon
         .stub()
@@ -344,26 +377,32 @@ describe('UserUpdater', function() {
 
   describe('setDefaultEmailAddress', function() {
     beforeEach(function() {
+      this.auditLog = {
+        initiatorId: this.stubbedUser,
+        ipAddress: '0:0:0:0'
+      }
       this.stubbedUser.emails = [
         {
           email: this.newEmail,
           confirmedAt: new Date()
         }
       ]
-      this.UserGetter.getUser = sinon.stub().yields(null, this.stubbedUser)
-      this.NewsletterManager.changeEmail.callsArgWith(2, null)
-      this.RecurlyWrapper.updateAccountEmailAddress.yields(null)
+      this.UserGetter.promises.getUser.resolves(this.stubbedUser)
+      this.NewsletterManager.promises.changeEmail.callsArgWith(2, null)
+      this.RecurlyWrapper.promises.updateAccountEmailAddress.resolves()
     })
 
     it('set default', function(done) {
-      this.UserUpdater.updateUser = sinon.stub().callsArgWith(2, null, { n: 1 })
+      this.UserUpdater.promises.updateUser = sinon.stub().resolves({ n: 1 })
 
       this.UserUpdater.setDefaultEmailAddress(
         this.stubbedUser._id,
         this.newEmail,
+        false,
+        this.auditLog,
         err => {
           should.not.exist(err)
-          this.UserUpdater.updateUser
+          this.UserUpdater.promises.updateUser
             .calledWith(
               { _id: this.stubbedUser._id, 'emails.email': this.newEmail },
               { $set: { email: this.newEmail } }
@@ -375,17 +414,19 @@ describe('UserUpdater', function() {
     })
 
     it('set changed the email in newsletter', function(done) {
-      this.UserUpdater.updateUser = sinon.stub().callsArgWith(2, null, { n: 1 })
+      this.UserUpdater.promises.updateUser = sinon.stub().resolves({ n: 1 })
 
       this.UserUpdater.setDefaultEmailAddress(
         this.stubbedUser._id,
         this.newEmail,
+        false,
+        this.auditLog,
         err => {
           should.not.exist(err)
-          this.NewsletterManager.changeEmail
+          this.NewsletterManager.promises.changeEmail
             .calledWith(this.stubbedUser, this.newEmail)
             .should.equal(true)
-          this.RecurlyWrapper.updateAccountEmailAddress
+          this.RecurlyWrapper.promises.updateAccountEmailAddress
             .calledWith(this.stubbedUser._id, this.newEmail)
             .should.equal(true)
           done()
@@ -394,13 +435,13 @@ describe('UserUpdater', function() {
     })
 
     it('handle error', function(done) {
-      this.UserUpdater.updateUser = sinon
-        .stub()
-        .callsArgWith(2, new Error('nope'))
+      this.UserUpdater.promises.updateUser = sinon.stub().rejects(Error('nope'))
 
       this.UserUpdater.setDefaultEmailAddress(
         this.stubbedUser._id,
         this.newEmail,
+        false,
+        this.auditLog,
         err => {
           should.exist(err)
           done()
@@ -409,11 +450,13 @@ describe('UserUpdater', function() {
     })
 
     it('handle missed update', function(done) {
-      this.UserUpdater.updateUser = sinon.stub().callsArgWith(2, null, { n: 0 })
+      this.UserUpdater.promises.updateUser = sinon.stub().resolves({ n: 0 })
 
       this.UserUpdater.setDefaultEmailAddress(
         this.stubbedUser._id,
         this.newEmail,
+        false,
+        this.auditLog,
         err => {
           should.exist(err)
           done()
@@ -425,8 +468,53 @@ describe('UserUpdater', function() {
       this.UserUpdater.setDefaultEmailAddress(
         this.stubbedUser._id,
         '.edu',
+        false,
+        this.auditLog,
         err => {
           should.exist(err)
+          done()
+        }
+      )
+    })
+
+    it('updates audit log', function(done) {
+      this.UserUpdater.promises.updateUser = sinon.stub().resolves({ n: 1 })
+
+      this.UserUpdater.setDefaultEmailAddress(
+        this.stubbedUser._id,
+        this.newEmail,
+        false,
+        this.auditLog,
+        error => {
+          expect(error).to.not.exist
+          expect(
+            this.UserAuditLogHandler.promises.addEntry
+          ).to.have.been.calledWith(
+            this.stubbedUser._id,
+            'change-primary-email',
+            this.auditLog.initiatorId,
+            this.auditLog.ipAddress,
+            {
+              newPrimaryEmail: this.newEmail,
+              oldPrimaryEmail: this.stubbedUser.email
+            }
+          )
+          done()
+        }
+      )
+    })
+
+    it('blocks email update if audit log returns an error', function(done) {
+      this.UserUpdater.promises.updateUser = sinon.stub()
+      this.UserAuditLogHandler.promises.addEntry.rejects(new Error('oops'))
+      this.UserUpdater.setDefaultEmailAddress(
+        this.stubbedUser._id,
+        this.newEmail,
+        false,
+        this.auditLog,
+        error => {
+          expect(error).to.exist
+          expect(this.UserUpdater.promises.updateUser).to.not.have.been.called
           done()
         }
       )
@@ -440,42 +528,77 @@ describe('UserUpdater', function() {
             confirmedAt: null
           }
         ]
-        this.UserGetter.getUser = sinon.stub().yields(null, this.stubbedUser)
-        this.UserUpdater.updateUser = sinon.stub()
-        this.NewsletterManager.changeEmail = sinon.stub()
+        this.UserUpdater.promises.updateUser = sinon.stub()
       })
 
       it('should callback with error', function() {
         this.UserUpdater.setDefaultEmailAddress(
           this.stubbedUser._id,
           this.newEmail,
-          this.callback
+          false,
+          this.auditLog,
+          error => {
+            expect(error).to.exist
+            expect(error.name).to.equal('UnconfirmedEmailError')
+            this.UserUpdater.promises.updateUser.callCount.should.equal(0)
+            this.NewsletterManager.promises.changeEmail.callCount.should.equal(
+              0
+            )
+          }
         )
-        this.callback.firstCall.args[0].name.should.equal(
-          'UnconfirmedEmailError'
-        )
-        this.UserUpdater.updateUser.callCount.should.equal(0)
-        this.NewsletterManager.changeEmail.callCount.should.equal(0)
       })
     })
 
     describe('when email does not belong to user', function() {
       beforeEach(function() {
         this.stubbedUser.emails = []
-        this.UserGetter.getUser = sinon.stub().yields(null, this.stubbedUser)
-        this.UserUpdater.updateUser = sinon.stub()
-        this.NewsletterManager.changeEmail = sinon.stub()
+        this.UserGetter.promises.getUser.resolves(this.stubbedUser)
+        this.UserUpdater.promises.updateUser = sinon.stub()
       })
 
       it('should callback with error', function() {
         this.UserUpdater.setDefaultEmailAddress(
           this.stubbedUser._id,
           this.newEmail,
-          this.callback
+          false,
+          this.auditLog,
+          error => {
+            expect(error).to.exist
+            expect(error.name).to.equal('Error')
+            this.UserUpdater.promises.updateUser.callCount.should.equal(0)
+            this.NewsletterManager.promises.changeEmail.callCount.should.equal(
+              0
+            )
+          }
         )
-        this.callback.firstCall.args[0].name.should.equal('Error')
-        this.UserUpdater.updateUser.callCount.should.equal(0)
-        this.NewsletterManager.changeEmail.callCount.should.equal(0)
+      })
+    })
+
+    describe('security alert', function() {
+      it('should be sent to old and new email when sendSecurityAlert=true', function(done) {
+        // this.UserGetter.promises.getUser.resolves(this.stubbedUser)
+        this.UserUpdater.promises.updateUser = sinon.stub().resolves({ n: 1 })
+
+        this.UserUpdater.setDefaultEmailAddress(
+          this.stubbedUser._id,
+          this.newEmail,
+          false,
+          this.auditLog,
+          true,
+          error => {
+            expect(error).to.not.exist
+            this.EmailHandler.promises.sendEmail.callCount.should.equal(2)
+            const toOldEmailAlert = this.EmailHandler.promises.sendEmail
+              .firstCall
+            expect(toOldEmailAlert.args[0]).to.equal('securityAlert')
+            const toNewEmailAlert = this.EmailHandler.promises.sendEmail
+              .lastCall
+            expect(toOldEmailAlert.args[1].to).to.equal(this.stubbedUser.email)
+            expect(toNewEmailAlert.args[0]).to.equal('securityAlert')
+            expect(toNewEmailAlert.args[1].to).to.equal(this.newEmail)
+            done()
+          }
+        )
       })
     })
   })

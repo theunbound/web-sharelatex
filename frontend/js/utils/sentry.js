@@ -1,21 +1,30 @@
 // Conditionally enable Sentry based on whether the DSN token is set
+// Conditionally enable Sentry based on whether the DSN token is set
 if (window.ExposedSettings.sentryDsn) {
   import(/* webpackChunkName: "sentry" */ '@sentry/browser').then(Sentry => {
     let eventCount = 0
 
     Sentry.init({
       dsn: window.ExposedSettings.sentryDsn,
+      release: window.ExposedSettings.sentryRelease,
+      environment: window.ExposedSettings.sentryEnvironment,
 
-      // Ignore errors unless they come from overleaf.com/sharelatex.com
+      // Ignore errors unless they come from our origins
       // Adapted from: https://docs.sentry.io/platforms/javascript/#decluttering-sentry
       whitelistUrls: [
-        /https:\/\/[a-z]+\.overleaf\.com/,
-        /https:\/\/[a-z]+\.sharelatex\.com/
+        new RegExp(window.ExposedSettings.sentryAllowedOriginRegex)
       ],
 
       ignoreErrors: [
         // Ignore very noisy error
-        'SecurityError: Permission denied to access property "pathname" on cross-origin object'
+        'SecurityError: Permission denied to access property "pathname" on cross-origin object',
+        // Ignore unhandled error that is "expected" - see https://github.com/overleaf/issues/issues/3321
+        /^Missing PDF/,
+        // Ignore "expected" error from aborted fetch - see https://github.com/overleaf/issues/issues/3321
+        /^AbortError/,
+        // Ignore spurious error from Ace internals - see https://github.com/overleaf/issues/issues/3321
+        'ResizeObserver loop limit exceeded',
+        'ResizeObserver loop completed with undelivered notifications.'
       ],
 
       beforeSend(event) {
@@ -31,11 +40,7 @@ if (window.ExposedSettings.sentryDsn) {
       }
     })
 
-    Sentry.configureScope(scope => {
-      if (window.user_id.length) {
-        scope.setUser(window.user_id)
-      }
-    })
+    Sentry.setUser({ id: window.user_id })
 
     // Previously Raven added itself as a global, so we mimic that old behaviour
     window.Raven = Sentry

@@ -1,233 +1,210 @@
-/* eslint-disable
-    camelcase,
-    handle-callback-err,
-    max-len,
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS102: Remove unnecessary code created because of implicit returns
- * DS207: Consider shorter variations of null checks
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
-const path = require('path')
-const rimraf = require('rimraf')
-const { promisify, callbackify } = require('util')
+const Path = require('path')
+const fs = require('fs-extra')
+const { callbackify } = require('util')
 const ArchiveManager = require('./ArchiveManager')
+const { Doc } = require('../../models/Doc')
+const DocstoreManager = require('../Docstore/DocstoreManager')
+const DocumentHelper = require('../Documents/DocumentHelper')
+const DocumentUpdaterHandler = require('../DocumentUpdater/DocumentUpdaterHandler')
+const FileStoreHandler = require('../FileStore/FileStoreHandler')
 const FileSystemImportManager = require('./FileSystemImportManager')
 const ProjectCreationHandler = require('../Project/ProjectCreationHandler')
+const ProjectEntityMongoUpdateHandler = require('../Project/ProjectEntityMongoUpdateHandler')
 const ProjectRootDocManager = require('../Project/ProjectRootDocManager')
 const ProjectDetailsHandler = require('../Project/ProjectDetailsHandler')
-const ProjectDeleter = require('../Project/ProjectDeleter').promises
-const DocumentHelper = require('../Documents/DocumentHelper')
+const ProjectDeleter = require('../Project/ProjectDeleter')
+const TpdsProjectFlusher = require('../ThirdPartyDataStore/TpdsProjectFlusher')
 const logger = require('logger-sharelatex')
 
-const ProjectUploadManager = {
-  createProjectFromZipArchive(ownerId, defaultName, zipPath, callback) {
-    callbackify(ProjectUploadManager.promises.createProjectFromZipArchive)(
-      ownerId,
-      defaultName,
-      zipPath,
-      callback
-    )
-  },
-
-  createProjectFromZipArchiveWithName(
-    ownerId,
-    proposedName,
-    zipPath,
-    attributes,
-    callback
-  ) {
-    if (callback == null) {
-      callback = function(error, project) {}
-    }
-    if (arguments.length === 4) {
-      callback = attributes
-      attributes = {}
-    }
-
-    callbackify(
-      ProjectUploadManager.promises.createProjectFromZipArchiveWithName
-    )(ownerId, proposedName, zipPath, attributes, callback)
-  },
-
-  insertZipArchiveIntoFolder(
-    owner_id,
-    project_id,
-    folder_id,
-    zipPath,
-    callback
-  ) {
-    if (callback == null) {
-      callback = function(error) {}
-    }
-    const destination = ProjectUploadManager._getDestinationDirectory(zipPath)
-    return ArchiveManager.extractZipArchive(zipPath, destination, error => {
-      if (error != null) {
-        return callback(error)
-      }
-
-      return ProjectUploadManager._insertZipContentsIntoFolder(
-        owner_id,
-        project_id,
-        folder_id,
-        destination,
-        callback
-      )
-    })
-  },
-
-  _insertZipContentsIntoFolder(
-    owner_id,
-    project_id,
-    folder_id,
-    destination,
-    callback
-  ) {
-    if (callback == null) {
-      callback = function(error) {}
-    }
-    return ArchiveManager.findTopLevelDirectory(destination, function(
-      error,
-      topLevelDestination
-    ) {
-      if (error != null) {
-        return callback(error)
-      }
-      return FileSystemImportManager.addFolderContents(
-        owner_id,
-        project_id,
-        folder_id,
-        topLevelDestination,
-        false,
-        function(error) {
-          if (error != null) {
-            return callback(error)
-          }
-          return rimraf(destination, callback)
-        }
-      )
-    })
-  },
-
-  _getDestinationDirectory(source) {
-    return path.join(
-      path.dirname(source),
-      `${path.basename(source, '.zip')}-${Date.now()}`
-    )
-  }
-}
-
-const promises = {
-  async createProjectFromZipArchive(ownerId, defaultName, zipPath) {
-    const destination = ProjectUploadManager._getDestinationDirectory(zipPath)
-    await ArchiveManager.promises.extractZipArchive(zipPath, destination)
-
-    const {
-      path,
-      content
-    } = await ProjectRootDocManager.promises.findRootDocFileFromDirectory(
-      destination
-    )
-
-    const projectName =
-      DocumentHelper.getTitleFromTexContent(content || '') || defaultName
-    const proposedName = ProjectDetailsHandler.fixProjectName(projectName)
-    const uniqueName = await ProjectDetailsHandler.promises.generateUniqueName(
-      ownerId,
-      proposedName
-    )
-
-    const project = await ProjectCreationHandler.promises.createBlankProject(
-      ownerId,
-      uniqueName
-    )
-    try {
-      await ProjectUploadManager.promises._insertZipContentsIntoFolder(
-        ownerId,
-        project._id,
-        project.rootFolder[0]._id,
-        destination
-      )
-
-      if (path) {
-        await ProjectRootDocManager.promises.setRootDocFromName(
-          project._id,
-          path
-        )
-      }
-    } catch (err) {
-      // no need to wait for the cleanup here
-      ProjectDeleter.deleteProject(project._id).catch(err =>
-        logger.error(
-          { err, projectId: project._id },
-          'there was an error cleaning up project after importing a zip failed'
-        )
-      )
-      throw err
-    }
-    return project
-  },
-
-  async createProjectFromZipArchiveWithName(
-    ownerId,
-    proposedName,
-    zipPath,
-    attributes
-  ) {
-    attributes = attributes || {}
-
-    const fixedProjectName = ProjectDetailsHandler.fixProjectName(proposedName)
-    const projectName = await ProjectDetailsHandler.promises.generateUniqueName(
-      ownerId,
-      fixedProjectName
-    )
-
-    const project = await ProjectCreationHandler.promises.createBlankProject(
-      ownerId,
-      projectName,
-      attributes
-    )
-
-    try {
-      await ProjectUploadManager.promises.insertZipArchiveIntoFolder(
-        ownerId,
-        project._id,
-        project.rootFolder[0]._id,
-        zipPath
-      )
-      await ProjectRootDocManager.promises.setRootDocAutomatically(project._id)
-    } catch (err) {
-      // no need to wait for the cleanup here
-      ProjectDeleter.deleteProject(project._id).catch(err =>
-        logger.error(
-          { err, projectId: project._id },
-          'there was an error cleaning up project after importing a zip failed'
-        )
-      )
-      throw err
-    }
-
-    return project
-  },
-
-  _insertZipContentsIntoFolder: promisify(
-    ProjectUploadManager._insertZipContentsIntoFolder
+module.exports = {
+  createProjectFromZipArchive: callbackify(createProjectFromZipArchive),
+  createProjectFromZipArchiveWithName: callbackify(
+    createProjectFromZipArchiveWithName
   ),
-
-  insertZipArchiveIntoFolder(ownerId, projectId, folderId, zipPath) {
-    return promisify(ProjectUploadManager.insertZipArchiveIntoFolder)(
-      ownerId,
-      projectId,
-      folderId,
-      zipPath
-    )
+  promises: {
+    createProjectFromZipArchive,
+    createProjectFromZipArchiveWithName
   }
 }
 
-ProjectUploadManager.promises = promises
+async function createProjectFromZipArchive(ownerId, defaultName, zipPath) {
+  const contentsPath = await _extractZip(zipPath)
+  const {
+    path,
+    content
+  } = await ProjectRootDocManager.promises.findRootDocFileFromDirectory(
+    contentsPath
+  )
 
-module.exports = ProjectUploadManager
+  const projectName =
+    DocumentHelper.getTitleFromTexContent(content || '') || defaultName
+  const uniqueName = await _generateUniqueName(ownerId, projectName)
+  const project = await ProjectCreationHandler.promises.createBlankProject(
+    ownerId,
+    uniqueName
+  )
+  try {
+    await _initializeProjectWithZipContents(ownerId, project, contentsPath)
+
+    if (path) {
+      await ProjectRootDocManager.promises.setRootDocFromName(project._id, path)
+    }
+  } catch (err) {
+    // no need to wait for the cleanup here
+    ProjectDeleter.promises
+      .deleteProject(project._id)
+      .catch(err =>
+        logger.error(
+          { err, projectId: project._id },
+          'there was an error cleaning up project after importing a zip failed'
+        )
+      )
+    throw err
+  }
+  await fs.remove(contentsPath)
+  return project
+}
+
+async function createProjectFromZipArchiveWithName(
+  ownerId,
+  proposedName,
+  zipPath,
+  attributes = {}
+) {
+  const contentsPath = await _extractZip(zipPath)
+  const uniqueName = await _generateUniqueName(ownerId, proposedName)
+  const project = await ProjectCreationHandler.promises.createBlankProject(
+    ownerId,
+    uniqueName,
+    attributes
+  )
+
+  try {
+    await _initializeProjectWithZipContents(ownerId, project, contentsPath)
+    await ProjectRootDocManager.promises.setRootDocAutomatically(project._id)
+  } catch (err) {
+    // no need to wait for the cleanup here
+    ProjectDeleter.promises
+      .deleteProject(project._id)
+      .catch(err =>
+        logger.error(
+          { err, projectId: project._id },
+          'there was an error cleaning up project after importing a zip failed'
+        )
+      )
+    throw err
+  }
+  await fs.remove(contentsPath)
+  return project
+}
+
+async function _extractZip(zipPath) {
+  const destination = Path.join(
+    Path.dirname(zipPath),
+    `${Path.basename(zipPath, '.zip')}-${Date.now()}`
+  )
+  await ArchiveManager.promises.extractZipArchive(zipPath, destination)
+  return destination
+}
+
+async function _generateUniqueName(ownerId, originalName) {
+  const fixedName = ProjectDetailsHandler.fixProjectName(originalName)
+  const uniqueName = await ProjectDetailsHandler.promises.generateUniqueName(
+    ownerId,
+    fixedName
+  )
+  return uniqueName
+}
+
+async function _initializeProjectWithZipContents(
+  ownerId,
+  project,
+  contentsPath
+) {
+  const topLevelDir = await ArchiveManager.promises.findTopLevelDirectory(
+    contentsPath
+  )
+  const importEntries = await FileSystemImportManager.promises.importDir(
+    topLevelDir
+  )
+  const { fileEntries, docEntries } = await _createEntriesFromImports(
+    project._id,
+    importEntries
+  )
+  const projectVersion = await ProjectEntityMongoUpdateHandler.promises.createNewFolderStructure(
+    project._id,
+    docEntries,
+    fileEntries
+  )
+  await _notifyDocumentUpdater(project, ownerId, {
+    newFiles: fileEntries,
+    newDocs: docEntries,
+    newProject: { version: projectVersion }
+  })
+  await TpdsProjectFlusher.promises.flushProjectToTpds(project._id)
+}
+
+async function _createEntriesFromImports(projectId, importEntries) {
+  const fileEntries = []
+  const docEntries = []
+  for (const importEntry of importEntries) {
+    switch (importEntry.type) {
+      case 'doc': {
+        const docEntry = await _createDoc(
+          projectId,
+          importEntry.projectPath,
+          importEntry.lines
+        )
+        docEntries.push(docEntry)
+        break
+      }
+      case 'file': {
+        const fileEntry = await _createFile(
+          projectId,
+          importEntry.projectPath,
+          importEntry.fsPath
+        )
+        fileEntries.push(fileEntry)
+        break
+      }
+      default: {
+        throw new Error(`Invalid import type: ${importEntry.type}`)
+      }
+    }
+  }
+  return { fileEntries, docEntries }
+}
+
+async function _createDoc(projectId, projectPath, docLines) {
+  const docName = Path.basename(projectPath)
+  const doc = new Doc({ name: docName })
+  await DocstoreManager.promises.updateDoc(
+    projectId.toString(),
+    doc._id.toString(),
+    docLines,
+    0,
+    {}
+  )
+  return { doc, path: projectPath, docLines: docLines.join('\n') }
+}
+
+async function _createFile(projectId, projectPath, fsPath) {
+  const fileName = Path.basename(projectPath)
+  const { fileRef, url } = await FileStoreHandler.promises.uploadFileFromDisk(
+    projectId,
+    { name: fileName },
+    fsPath
+  )
+  return { file: fileRef, path: projectPath, url }
+}
+
+async function _notifyDocumentUpdater(project, userId, changes) {
+  const projectHistoryId =
+    project.overleaf && project.overleaf.history && project.overleaf.history.id
+  await DocumentUpdaterHandler.promises.updateProjectStructure(
+    project._id,
+    projectHistoryId,
+    userId,
+    changes
+  )
+}

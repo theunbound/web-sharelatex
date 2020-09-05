@@ -1,7 +1,6 @@
 const sinon = require('sinon')
 const { expect } = require('chai')
 const SandboxedModule = require('sandboxed-module')
-const HttpErrors = require('@overleaf/o-error/http')
 const Errors = require('../../../../app/src/Features/Errors/Errors.js')
 
 const MODULE_PATH =
@@ -17,6 +16,9 @@ describe('AuthorizationMiddleware', function() {
       isUserLoggedIn: sinon.stub().returns(true)
     }
     this.AuthorizationManager = {}
+    this.HttpErrorHandler = {
+      forbidden: sinon.stub()
+    }
     this.TokenAccessHandler = {
       getRequestToken: sinon.stub().returns(this.token)
     }
@@ -37,7 +39,7 @@ describe('AuthorizationMiddleware', function() {
         mongojs: {
           ObjectId: this.ObjectId
         },
-        '@overleaf/o-error/http': HttpErrors,
+        '../Errors/HttpErrorHandler': this.HttpErrorHandler,
         '../Errors/Errors': Errors,
         '../Authentication/AuthenticationController': this
           .AuthenticationController,
@@ -157,8 +159,8 @@ describe('AuthorizationMiddleware', function() {
                 this.next
               )
               this.next.called.should.equal(false)
-              this.AuthorizationMiddleware.redirectToRestricted
-                .calledWith(this.req, this.res, this.next)
+              this.HttpErrorHandler.forbidden
+                .calledWith(this.req, this.res)
                 .should.equal(true)
             })
           })
@@ -198,8 +200,8 @@ describe('AuthorizationMiddleware', function() {
                 this.next
               )
               this.next.called.should.equal(false)
-              this.AuthorizationMiddleware.redirectToRestricted
-                .calledWith(this.req, this.res, this.next)
+              this.HttpErrorHandler.forbidden
+                .calledWith(this.req, this.res)
                 .should.equal(true)
             })
           })
@@ -277,14 +279,11 @@ describe('AuthorizationMiddleware', function() {
             .yields(null, false)
         })
 
-        it('should raise a 403', function(done) {
+        it('should invoke HTTP forbidden error handler', function(done) {
+          this.HttpErrorHandler.forbidden = sinon.spy(() => done())
           this.AuthorizationMiddleware.ensureUserCanAdminProject(
             this.req,
-            this.res,
-            err => {
-              expect(err).to.be.an.instanceof(HttpErrors.ForbiddenError)
-              done()
-            }
+            this.res
           )
         })
       })
@@ -317,14 +316,11 @@ describe('AuthorizationMiddleware', function() {
             .yields(null, false)
         })
 
-        it('should raise a 403', function(done) {
+        it('should invoke HTTP forbidden error handler', function(done) {
+          this.HttpErrorHandler.forbidden = sinon.spy(() => done())
           this.AuthorizationMiddleware.ensureUserCanAdminProject(
             this.req,
-            this.res,
-            err => {
-              expect(err).to.be.an.instanceof(HttpErrors.ForbiddenError)
-              done()
-            }
+            this.res
           )
         })
       })
@@ -437,6 +433,55 @@ describe('AuthorizationMiddleware', function() {
             .should.equal(true)
         })
       })
+    })
+  })
+
+  describe('blockRestrictedUserFromProject', function() {
+    beforeEach(function() {
+      this.AuthorizationMiddleware._getUserAndProjectId = sinon
+        .stub()
+        .callsArgWith(1, null, this.userId, this.project_id)
+    })
+
+    it('should issue a 401 response for a restricted user', function(done) {
+      this.AuthorizationManager.isRestrictedUserForProject = sinon
+        .stub()
+        .callsArgWith(3, null, true)
+      this.req = {}
+      this.next = sinon.stub()
+      this.res.sendStatus = status => {
+        expect(status).to.equal(403)
+        expect(
+          this.AuthorizationManager.isRestrictedUserForProject.called
+        ).to.equal(true)
+        expect(this.next.called).to.equal(false)
+        done()
+      }
+      this.AuthorizationMiddleware.blockRestrictedUserFromProject(
+        this.req,
+        this.res,
+        this.next
+      )
+    })
+
+    it('should pass through for a regular user', function(done) {
+      this.AuthorizationManager.isRestrictedUserForProject = sinon
+        .stub()
+        .callsArgWith(3, null, false)
+      this.req = {}
+      this.res.sendStatus = sinon.stub()
+      this.next = status => {
+        expect(
+          this.AuthorizationManager.isRestrictedUserForProject.called
+        ).to.equal(true)
+        expect(this.res.sendStatus.called).to.equal(false)
+        done()
+      }
+      this.AuthorizationMiddleware.blockRestrictedUserFromProject(
+        this.req,
+        this.res,
+        this.next
+      )
     })
   })
 

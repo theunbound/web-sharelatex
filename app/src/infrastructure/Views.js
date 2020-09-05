@@ -1,16 +1,23 @@
 const logger = require('logger-sharelatex')
 const pug = require('pug')
 const globby = require('globby')
+const Settings = require('settings-sharelatex')
 
 // Generate list of view names from app/views
 
 const viewList = globby
-  .sync('**/*.pug', {
+  .sync('app/views/**/*.pug', {
     onlyFiles: true,
     concurrency: 1,
-    ignore: '**/_*.pug',
-    cwd: 'app/views'
+    ignore: '**/_*.pug'
   })
+  .concat(
+    globby.sync('modules/*/app/views/**/*.pug', {
+      onlyFiles: true,
+      concurrency: 1,
+      ignore: '**/_*.pug'
+    })
+  )
   .map(x => {
     return x.replace(/\.pug$/, '') // strip trailing .pug extension
   })
@@ -25,8 +32,11 @@ module.exports = {
     let failures = 0
     viewList.forEach(view => {
       try {
-        let filename = app.get('views') + '/' + view + '.pug'
-        pug.compileFile(filename, { cache: true })
+        let filename = view + '.pug'
+        pug.compileFile(filename, {
+          cache: true,
+          compileDebug: Settings.debugPugTemplates
+        })
         logger.log({ view }, 'compiled')
         success++
       } catch (err) {

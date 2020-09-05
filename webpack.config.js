@@ -15,8 +15,7 @@ const entryPoints = {
   ide: './frontend/js/ide.js',
   style: './frontend/stylesheets/style.less',
   'ieee-style': './frontend/stylesheets/ieee-style.less',
-  'light-style': './frontend/stylesheets/light-style.less',
-  'sl-style': './frontend/stylesheets/sl-style.less'
+  'light-style': './frontend/stylesheets/light-style.less'
 }
 
 // Attempt to load frontend entry-points from modules, if they exist
@@ -57,8 +56,12 @@ module.exports = {
       {
         // Pass application JS files through babel-loader, compiling to ES5
         test: /\.js$/,
-        // Only compile application files (dependencies are in ES5 already)
-        exclude: /node_modules/,
+        // Only compile application files (npm and vendored dependencies are in
+        // ES5 already)
+        exclude: [
+          /node_modules/,
+          path.resolve(__dirname, 'frontend/js/vendor')
+        ],
         use: [
           {
             loader: 'babel-loader',
@@ -104,9 +107,7 @@ module.exports = {
             options: {
               // Uniquely identifies the postcss plugin (required by webpack)
               ident: 'postcss',
-              plugins: [
-                require('autoprefixer')({ env: 'last 2 versions, ie >= 10' })
-              ]
+              plugins: [require('autoprefixer')]
             }
           },
           // Compiles the Less syntax to CSS
@@ -138,6 +139,16 @@ module.exports = {
           knownHelpersOnly: false,
           runtimePath: 'handlebars/runtime'
         }
+      },
+      {
+        // Load translations files with custom loader, to extract and apply
+        // fallbacks
+        test: /locales\/(\w{2}(-\w{2})?)\.json$/,
+        use: [
+          {
+            loader: path.resolve('frontend/translations-loader.js')
+          }
+        ]
       },
       // Allow for injection of modules dependencies by reading contents of
       // modules directory and adding necessary dependencies
@@ -178,16 +189,6 @@ module.exports = {
           {
             loader: 'expose-loader',
             options: 'angular'
-          }
-        ]
-      },
-      {
-        // Expose lodash global variable
-        test: require.resolve('lodash'),
-        use: [
-          {
-            loader: 'expose-loader',
-            options: '_'
           }
         ]
       }
@@ -239,6 +240,11 @@ module.exports = {
       // files are held in memory). This is needed because the server will read
       // this file (from disk) when building the script's url
       writeToFileEmit: true
+    }),
+
+    // Silence react messages in the dev-tools console
+    new webpack.DefinePlugin({
+      __REACT_DEVTOOLS_GLOBAL_HOOK__: '({ isDisabled: true })'
     }),
 
     // Prevent moment from loading (very large) locale files that aren't used

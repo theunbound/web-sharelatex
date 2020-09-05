@@ -214,6 +214,50 @@ describe('ClsiManager', function() {
       })
     })
 
+    describe('with an unavailable response', function() {
+      beforeEach(function() {
+        this.ClsiManager.sendRequestOnce = sinon.stub()
+        this.ClsiManager.sendRequestOnce
+          .withArgs(this.project_id, this.user_id, {
+            syncType: 'full',
+            forceNewClsiServer: true
+          })
+          .callsArgWith(3, null, (this.status = 'success'))
+        this.ClsiManager.sendRequestOnce
+          .withArgs(this.project_id, this.user_id, {})
+          .callsArgWith(3, null, 'unavailable')
+        this.ClsiManager.sendRequest(
+          this.project_id,
+          this.user_id,
+          {},
+          this.callback
+        )
+      })
+
+      it('should call the sendRequestOnce method twice', function() {
+        this.ClsiManager.sendRequestOnce.calledTwice.should.equal(true)
+      })
+
+      it('should call the sendRequestOnce method with forceNewClsiServer:true', function() {
+        this.ClsiManager.sendRequestOnce
+          .calledWith(this.project_id, this.user_id, {
+            forceNewClsiServer: true,
+            syncType: 'full'
+          })
+          .should.equal(true)
+      })
+
+      it('should call the sendRequestOnce method without forceNewClsiServer:true', function() {
+        this.ClsiManager.sendRequestOnce
+          .calledWith(this.project_id, this.user_id, {})
+          .should.equal(true)
+      })
+
+      it('should call the callback with a success status', function() {
+        this.callback.calledWith(null, this.status).should.equal(true)
+      })
+    })
+
     describe('when the resources fail the precompile check', function() {
       beforeEach(function() {
         this.ClsiFormatChecker.checkRecoursesForProblems = sinon
@@ -445,7 +489,7 @@ describe('ClsiManager', function() {
       beforeEach(function(done) {
         this.ClsiManager._buildRequest(
           this.project_id,
-          { timeout: 100 },
+          { timeout: 100, compileGroup: 'standard' },
           (err, request) => {
             if (err != null) {
               return done(err)
@@ -495,7 +539,8 @@ describe('ClsiManager', function() {
               draft: false,
               check: undefined,
               syncType: undefined, // "full"
-              syncState: undefined
+              syncState: undefined,
+              compileGroup: 'standard'
             }, // "01234567890abcdef"
             rootResourcePath: 'main.tex',
             resources: [
@@ -539,7 +584,11 @@ describe('ClsiManager', function() {
           .callsArgWith(1, null, { 'mock-doc-id-1': 'main.tex' })
         this.ClsiManager._buildRequest(
           this.project_id,
-          { timeout: 100, incrementalCompilesEnabled: true },
+          {
+            timeout: 100,
+            incrementalCompilesEnabled: true,
+            compileGroup: 'priority'
+          },
           (err, request) => {
             if (err != null) {
               return done(err)
@@ -587,7 +636,8 @@ describe('ClsiManager', function() {
               draft: false,
               check: undefined,
               syncType: 'incremental',
-              syncState: '01234567890abcdef'
+              syncState: '01234567890abcdef',
+              compileGroup: 'priority'
             },
             rootResourcePath: 'main.tex',
             resources: [

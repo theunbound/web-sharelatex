@@ -1,4 +1,5 @@
 const APP_ROOT = '../../../../app/src'
+const OError = require('@overleaf/o-error')
 const EmailHandler = require(`${APP_ROOT}/Features/Email/EmailHandler`)
 const Errors = require('../Errors/Errors')
 const _ = require('lodash')
@@ -8,6 +9,12 @@ const { User } = require(`${APP_ROOT}/models/User`)
 const { promisifyAll } = require(`${APP_ROOT}/util/promises`)
 
 const oauthProviders = settings.oauthProviders || {}
+
+function _getIndefiniteArticle(providerName) {
+  const vowels = ['a', 'e', 'i', 'o', 'u']
+  if (vowels.includes(providerName.charAt(0).toLowerCase())) return 'an'
+  return 'a'
+}
 
 function getUser(providerId, externalUserId, callback) {
   if (providerId == null || externalUserId == null) {
@@ -81,20 +88,21 @@ function link(
     } else if (err != null) {
       callback(err)
     } else if (res) {
+      const providerName = oauthProviders[providerId].name
+      const indefiniteArticle = _getIndefiniteArticle(providerName)
       const emailOptions = {
         to: res.email,
-        provider: oauthProviders[providerId].name
+        action: `${providerName} account linked`,
+        actionDescribed: `${indefiniteArticle} ${providerName} account was linked to your account ${
+          res.email
+        }`
       }
-      EmailHandler.sendEmail(
-        'emailThirdPartyIdentifierLinked',
-        emailOptions,
-        error => {
-          if (error != null) {
-            logger.warn(error)
-          }
-          return callback(null, res)
+      EmailHandler.sendEmail('securityAlert', emailOptions, error => {
+        if (error != null) {
+          logger.warn(OError.tag(error))
         }
-      )
+        return callback(null, res)
+      })
     } else if (retry) {
       // if already retried then throw error
       callback(new Error('update failed'))
@@ -138,20 +146,21 @@ function unlink(userId, providerId, callback) {
     } else if (!res) {
       callback(new Error('update failed'))
     } else {
+      const providerName = oauthProviders[providerId].name
+      const indefiniteArticle = _getIndefiniteArticle(providerName)
       const emailOptions = {
         to: res.email,
-        provider: oauthProviders[providerId].name
+        action: `${providerName} account no longer linked`,
+        actionDescribed: `${indefiniteArticle} ${providerName} account is no longer linked to your account ${
+          res.email
+        }`
       }
-      EmailHandler.sendEmail(
-        'emailThirdPartyIdentifierUnlinked',
-        emailOptions,
-        error => {
-          if (error != null) {
-            logger.warn(error)
-          }
-          return callback(null, res)
+      EmailHandler.sendEmail('securityAlert', emailOptions, error => {
+        if (error != null) {
+          logger.warn(error)
         }
-      )
+        return callback(null, res)
+      })
     }
   })
 }

@@ -6,6 +6,7 @@
     "prettier",
     "prettier/react",
     "prettier/standard",
+    "plugin:react-hooks/recommended",
     "plugin:jsx-a11y/recommended"
   ],
   "plugins": [
@@ -26,29 +27,12 @@
     }
   },
   "rules": {
-    // Fix conflict between prettier & standard by overriding to prefer
-    // double quotes
-    "jsx-quotes": ["error", "prefer-double"],
-
-    // Override weird behaviour of jsx-a11y label-has-for (says labels must be
-    // nested *and* have for/id attributes)
-    "jsx-a11y/label-has-for": [
-      "error",
-      {
-        "required": {
-          "some": [
-            "nesting",
-            "id"
-          ]
-        }
-      }
-    ],
-
     // Swap the no-unused-expressions rule with a more chai-friendly one
     "no-unused-expressions": 0,
     "chai-friendly/no-unused-expressions": "error"
   },
   "overrides": [
+    // NOTE: changing paths may require updating them in the Makefile too.
     {
       // Test specific rules
       "files": ["**/test/*/src/**/*.js"],
@@ -78,10 +62,9 @@
     },
     {
       // Frontend test specific rules
-      "files": ["**/test/frontend/**/*.js"],
+      "files": ["**/test/karma/**/*.js"],
       "globals": {
         "expect": true,
-        "define": true,
         "$": true
       }
     },
@@ -97,16 +80,38 @@
       // Frontend specific rules
       "files": ["**/frontend/js/**/*.js"],
       "globals": {
-        "define": true,
         "$": true,
         "angular": true,
-        "_": true,
         "ace": true,
         "ga": true,
+        "Raven": true, // Backwards compat for Sentry reporting
         "sl_console": true,
         "sl_debugging": true,
         // Injected in layout.pug
-        "user_id": true
+        "user_id": true,
+        "ExposedSettings": true
+      },
+      "rules": {
+        // Prevent usage of legacy string refs
+        "react/no-string-refs": "error",
+
+        // Fix conflict between prettier & standard by overriding to prefer
+        // double quotes
+        "jsx-quotes": ["error", "prefer-double"],
+
+        // Override weird behaviour of jsx-a11y label-has-for (says labels must be
+        // nested *and* have for/id attributes)
+        "jsx-a11y/label-has-for": [
+          "error",
+          {
+            "required": {
+              "some": [
+                "nesting",
+                "id"
+              ]
+            }
+          }
+        ]
       }
     }
   ]

@@ -28,12 +28,12 @@ const oneDayInMilliseconds = 86400000
 const ReferalConnect = require('../Features/Referal/ReferalConnect')
 const RedirectManager = require('./RedirectManager')
 const ProxyManager = require('./ProxyManager')
-const translations = require('translations-sharelatex').setup(Settings.i18n)
+const translations = require('./Translations')
 const Modules = require('./Modules')
 const Views = require('./Views')
 
 const ErrorController = require('../Features/Errors/ErrorController')
-const HttpErrorController = require('../Features/Errors/HttpErrorController')
+const HttpErrorHandler = require('../Features/Errors/HttpErrorHandler')
 const UserSessionsManager = require('../Features/User/UserSessionsManager')
 const AuthenticationController = require('../Features/Authentication/AuthenticationController')
 
@@ -69,6 +69,13 @@ if (Settings.behindProxy) {
         ', ' +
         req.headers['x-forwarded-for']
     }
+    next()
+  })
+}
+if (Settings.exposeHostname) {
+  const HOSTNAME = require('os').hostname()
+  app.use((req, res, next) => {
+    res.setHeader('X-Served-By', HOSTNAME)
     next()
   })
 }
@@ -178,8 +185,7 @@ webRouter.use(function(req, res, next) {
   ) {
     next()
   } else {
-    res.status(503)
-    res.render('general/closed', { title: 'maintenance' })
+    HttpErrorHandler.maintenance(req, res)
   }
 })
 
@@ -189,24 +195,31 @@ webRouter.use(function(req, res, next) {
   } else if (req.url.indexOf('/admin') === 0) {
     next()
   } else {
-    res.status(503)
-    res.render('general/closed', { title: 'maintenance' })
+    HttpErrorHandler.maintenance(req, res)
   }
 })
 
+webRouter.use(AuthenticationController.validateAdmin)
+
 // add security headers using Helmet
+const noCacheMiddleware = require('nocache')()
 webRouter.use(function(req, res, next) {
   const isLoggedIn = AuthenticationController.isUserLoggedIn(req)
   const isProjectPage = !!req.path.match('^/project/[a-f0-9]{24}$')
-
+  if (isLoggedIn || isProjectPage) {
+    noCacheMiddleware(req, res, next)
+  } else {
+    next()
+  }
+})
+webRouter.use(
   helmet({
     // note that more headers are added by default
     dnsPrefetchControl: false,
     referrerPolicy: { policy: 'origin-when-cross-origin' },
-    noCache: isLoggedIn || isProjectPage,
     hsts: false
-  })(req, res, next)
-})
+  })
+)
 
 logger.info('creating HTTP server'.yellow)
 const server = require('http').createServer(app)
@@ -221,7 +234,6 @@ if (enableApiRouter || notDefined(enableApiRouter)) {
   logger.info('providing api router')
   app.use(privateApiRouter)
   app.use(Validation.errorMiddleware)
-  app.use(HttpErrorController.handleError)
   app.use(ErrorController.handleApiError)
 }
 
@@ -241,12 +253,10 @@ if (enableWebRouter || notDefined(enableWebRouter)) {
 
   app.use(publicApiRouter) // public API goes with web router for public access
   app.use(Validation.errorMiddleware)
-  app.use(HttpErrorController.handleError)
   app.use(ErrorController.handleApiError)
 
   app.use(webRouter)
   app.use(Validation.errorMiddleware)
-  app.use(HttpErrorController.handleError)
   app.use(ErrorController.handleError)
 }
 

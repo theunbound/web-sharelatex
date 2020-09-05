@@ -1,4 +1,3 @@
-const HttpErrors = require('@overleaf/o-error/http')
 const ProjectDeleter = require('../Project/ProjectDeleter')
 const EditorController = require('./EditorController')
 const ProjectGetter = require('../Project/ProjectGetter')
@@ -12,6 +11,7 @@ const PrivilegeLevels = require('../Authorization/PrivilegeLevels')
 const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
 const AuthenticationController = require('../Authentication/AuthenticationController')
 const Errors = require('../Errors/Errors')
+const HttpErrorHandler = require('../Errors/HttpErrorHandler')
 const ProjectEntityUpdateHandler = require('../Project/ProjectEntityUpdateHandler')
 const { expressify } = require('../../util/promises')
 
@@ -28,6 +28,28 @@ module.exports = {
   convertDocToFile: expressify(convertDocToFile),
   _nameIsAcceptableLength
 }
+
+const unsupportedSpellcheckLanguages = [
+  'am',
+  'hy',
+  'bn',
+  'gu',
+  'he',
+  'hi',
+  'hu',
+  'is',
+  'kn',
+  'ml',
+  'mr',
+  'or',
+  'ss',
+  'ta',
+  'te',
+  'uk',
+  'uz',
+  'zu',
+  'fi'
+]
 
 async function joinProject(req, res, next) {
   const projectId = req.params.Project_id
@@ -46,12 +68,22 @@ async function joinProject(req, res, next) {
   }
   // Hide access tokens if this is not the project owner
   TokenAccessHandler.protectTokens(project, privilegeLevel)
+  // Hide sensitive data if the user is restricted
   if (isRestrictedUser) {
     project.owner = { _id: project.owner._id }
+    project.members = []
   }
   // Only show the 'renamed or deleted' message once
   if (project.deletedByExternalDataSource) {
     await ProjectDeleter.promises.unmarkAsDeletedByExternalSource(projectId)
+  }
+  // disable spellchecking for currently unsupported spell check languages
+  // preserve the value in the db so they can use it again once we add back
+  // support.
+  if (
+    unsupportedSpellcheckLanguages.indexOf(project.spellCheckLanguage) !== -1
+  ) {
+    project.spellCheckLanguage = ''
   }
   res.json({
     project,
@@ -238,15 +270,13 @@ async function convertDocToFile(req, res, next) {
     res.json({ fileId: fileRef._id.toString() })
   } catch (err) {
     if (err instanceof Errors.NotFoundError) {
-      throw new HttpErrors.NotFoundError({
-        info: { public: { message: 'Document not found' } }
-      })
+      return HttpErrorHandler.notFound(req, res, 'Document not found')
     } else if (err instanceof Errors.DocHasRangesError) {
-      throw new HttpErrors.UnprocessableEntityError({
-        info: {
-          public: { message: 'Document has comments or tracked changes' }
-        }
-      })
+      return HttpErrorHandler.unprocessableEntity(
+        req,
+        res,
+        'Document has comments or tracked changes'
+      )
     } else {
       throw err
     }

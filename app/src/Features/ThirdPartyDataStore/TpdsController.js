@@ -12,12 +12,15 @@
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
 let parseParams
+
 const tpdsUpdateHandler = require('./TpdsUpdateHandler')
 const UpdateMerger = require('./UpdateMerger')
 const logger = require('logger-sharelatex')
 const Path = require('path')
 const metrics = require('metrics-sharelatex')
 const NotificationsBuilder = require('../Notifications/NotificationsBuilder')
+const AuthenticationController = require('../Authentication/AuthenticationController')
+const TpdsQueueManager = require('./TpdsQueueManager').promises
 
 module.exports = {
   // mergeUpdate and deleteUpdate are used by Dropbox, where the project is only passed as the name, as the
@@ -42,6 +45,12 @@ module.exports = {
               'tpds update failed to be processed, too many requests'
             )
             return res.sendStatus(429)
+          } else if (err.name === 'ProjectIsArchivedOrTrashedError') {
+            logger.info(
+              { err, user_id, filePath, projectName },
+              'tpds project is archived'
+            )
+            return res.sendStatus(409)
           } else if (err.message === 'project_has_too_many_files') {
             logger.warn(
               { err, user_id, filePath },
@@ -128,6 +137,15 @@ module.exports = {
       }
       return res.sendStatus(200)
     })
+  },
+
+  async getQueues(req, res, next) {
+    const userId = AuthenticationController.getLoggedInUserId(req)
+    try {
+      res.json(await TpdsQueueManager.getQueues(userId))
+    } catch (err) {
+      next(err)
+    }
   },
 
   parseParams: (parseParams = function(req) {

@@ -13,6 +13,7 @@
 @import './editor/review-panel.less';
 @import './editor/rich-text.less';
 @import './editor/publish-modal.less';
+@import './editor/outline.less';
 
 @ui-layout-toggler-def-height: 50px;
 @ui-resizer-size: 7px;
@@ -29,7 +30,7 @@
   }
 }
 
-.editor-menu-icon when (@is-overleaf = true) {
+.editor-menu-icon {
   &.fa {
     width: 1em;
     background: @editor-header-logo-background;
@@ -350,30 +351,7 @@ CodeMirror
   height: 100%;
 }
 
-.ui-layout-resizer when (@is-overleaf = false) {
-  width: 6px;
-  background-color: @editor-resizer-bg-color;
-  border-left: 1px solid @editor-border-color;
-  border-right: 1px solid @editor-border-color;
-  .ui-layout-toggler {
-    color: #999;
-    font-family: FontAwesome;
-    font-style: normal;
-    font-weight: normal;
-    line-height: 1;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    font-size: 16px !important;
-    line-height: 50px;
-    background-color: @editor-toggler-bg-color;
-    &:hover {
-      background-color: @editor-toggler-hover-bg-color;
-      color: #333;
-    }
-  }
-}
-
-.ui-layout-resizer when (@is-overleaf = true) {
+.ui-layout-resizer {
   width: @ui-resizer-size !important;
   background-color: @editor-resizer-bg-color;
   &.ui-layout-resizer-closed {
@@ -401,28 +379,11 @@ CodeMirror
   }
 }
 
-.ui-layout-resizer-west.ui-layout-resizer-open,
-.ui-layout-resizer-east.ui-layout-resizer-closed {
-  .ui-layout-toggler when (@is-overleaf = false) {
-    &:before {
-      content: '\f104';
-    }
-  }
-}
-.ui-layout-resizer-east.ui-layout-resizer-open,
-.ui-layout-resizer-west.ui-layout-resizer-closed {
-  .ui-layout-toggler when (@is-overleaf = false) {
-    &:before {
-      content: '\f105';
-    }
-  }
-}
-
-.ui-layout-toggler when (@is-overleaf = true) {
+.ui-layout-toggler {
   display: none !important;
 }
 
-.custom-toggler when (@is-overleaf = true) {
+.custom-toggler {
   position: absolute;
   display: flex;
   align-items: center;
@@ -518,8 +479,32 @@ CodeMirror
 
 .modal.lock-editor-modal {
   display: flex !important;
+  background-color: rgba(0, 0, 0, 0.3);
+  overflow-y: hidden;
+  pointer-events: none;
   .modal-dialog {
-    margin: auto;
+    top: @line-height-computed;
+  }
+}
+
+.out-of-sync-modal {
+  .text-preview {
+    margin-top: @line-height-computed / 2;
+    .scroll-container {
+      max-height: 360px;
+      background-color: white;
+      font-size: 0.8em;
+      line-height: 1.1em;
+      overflow: auto;
+      border: 1px solid @gray-lighter;
+      padding-left: 12px;
+      padding-right: 12px;
+      padding-top: 8px;
+      padding-bottom: 8px;
+      text-align: left;
+      white-space: pre;
+      font-family: monospace;
+    }
   }
 }
 
@@ -605,14 +590,7 @@ CodeMirror
       }
       border-left: 4px solid transparent;
       &.selected-search-result-hit {
-        background-color: @red;
-        color: white;
-        .hit-year.small {
-          color: white;
-        }
-        .hit-journal.small {
-          color: white;
-        }
+        color: @brand-success;
       }
       .hit-title {
         font-size: 1.3em;

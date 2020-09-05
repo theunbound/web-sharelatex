@@ -4,7 +4,7 @@ const async = require('async')
 const logger = require('logger-sharelatex')
 const { ObjectId } = require('mongojs')
 const Errors = require('../Errors/Errors')
-const HttpErrors = require('@overleaf/o-error/http')
+const HttpErrorHandler = require('../Errors/HttpErrorHandler')
 const AuthenticationController = require('../Authentication/AuthenticationController')
 const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
 
@@ -43,6 +43,33 @@ module.exports = AuthorizationMiddleware = {
     })
   },
 
+  blockRestrictedUserFromProject(req, res, next) {
+    AuthorizationMiddleware._getUserAndProjectId(req, function(
+      error,
+      userId,
+      projectId
+    ) {
+      if (error) {
+        return next(error)
+      }
+      const token = TokenAccessHandler.getRequestToken(req, projectId)
+      AuthorizationManager.isRestrictedUserForProject(
+        userId,
+        projectId,
+        token,
+        (err, isRestrictedUser) => {
+          if (err) {
+            return next(err)
+          }
+          if (isRestrictedUser) {
+            return res.sendStatus(403)
+          }
+          next()
+        }
+      )
+    })
+  },
+
   ensureUserCanReadProject(req, res, next) {
     AuthorizationMiddleware._getUserAndProjectId(req, function(
       error,
@@ -72,11 +99,7 @@ module.exports = AuthorizationMiddleware = {
             { userId, projectId },
             'denying user read access to project'
           )
-          const acceptHeader = req.headers && req.headers['accept']
-          if (acceptHeader && acceptHeader.match(/^application\/json.*$/)) {
-            return res.sendStatus(403)
-          }
-          AuthorizationMiddleware.redirectToRestricted(req, res, next)
+          HttpErrorHandler.forbidden(req, res)
         }
       )
     })
@@ -111,7 +134,7 @@ module.exports = AuthorizationMiddleware = {
             { userId, projectId },
             'denying user write access to project settings'
           )
-          AuthorizationMiddleware.redirectToRestricted(req, res, next)
+          HttpErrorHandler.forbidden(req, res)
         }
       )
     })
@@ -146,7 +169,7 @@ module.exports = AuthorizationMiddleware = {
             { userId, projectId },
             'denying user write access to project settings'
           )
-          AuthorizationMiddleware.redirectToRestricted(req, res, next)
+          HttpErrorHandler.forbidden(req, res)
         }
       )
     })
@@ -181,7 +204,7 @@ module.exports = AuthorizationMiddleware = {
             { userId, projectId },
             'denying user admin access to project'
           )
-          next(new HttpErrors.ForbiddenError({}))
+          HttpErrorHandler.forbidden(req, res)
         }
       )
     })
@@ -234,7 +257,9 @@ module.exports = AuthorizationMiddleware = {
 
   redirectToRestricted(req, res, next) {
     // TODO: move this to throwing ForbiddenError
-    res.redirect(`/restricted?from=${encodeURIComponent(req.url)}`)
+    res.redirect(
+      `/restricted?from=${encodeURIComponent(res.locals.currentUrl)}`
+    )
   },
 
   restricted(req, res, next) {

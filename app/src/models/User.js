@@ -7,6 +7,16 @@ const { ObjectId } = Schema
 // See https://stackoverflow.com/questions/386294/what-is-the-maximum-length-of-a-valid-email-address/574698#574698
 const MAX_EMAIL_LENGTH = 254
 
+const AuditLogEntrySchema = new Schema({
+  _id: false,
+  info: { type: Object },
+  initiatorId: { type: Schema.Types.ObjectId },
+  ipAddress: { type: String },
+  operation: { type: String },
+  userId: { type: Schema.Types.ObjectId },
+  timestamp: { type: Date }
+})
+
 const UserSchema = new Schema({
   email: { type: String, default: '', maxlength: MAX_EMAIL_LENGTH },
   emails: [
@@ -134,6 +144,7 @@ const UserSchema = new Schema({
     mendeley: Boolean, // coerce the refProviders values to Booleans
     zotero: Boolean
   },
+  alphaProgram: { type: Boolean, default: false }, // experimental features
   betaProgram: { type: Boolean, default: false },
   overleaf: {
     id: { type: Number },
@@ -148,7 +159,9 @@ const UserSchema = new Schema({
     createdAt: { type: Date },
     enrolledAt: { type: Date },
     secret: { type: String }
-  }
+  },
+  onboardingEmailSentAt: { type: Date },
+  auditLog: [AuditLogEntrySchema]
 })
 
 exports.User = mongoose.model('User', UserSchema)

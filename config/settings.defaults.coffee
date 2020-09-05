@@ -27,6 +27,11 @@ else
 		user: undefined
 		pass: undefined
 
+intFromEnv = (name, defaultValue) ->
+	if defaultValue in [null, undefined] or typeof defaultValue != 'number'
+		throw new Error("Bad default integer value for setting: #{name}, #{defaultValue}")
+	parseInt(process.env[name], 10) || defaultValue
+
 module.exports = settings =
 
 	allowAnonymousReadAndWriteSharing:
@@ -38,6 +43,7 @@ module.exports = settings =
 	mongo:
 		url : process.env['MONGO_CONNECTION_STRING'] || process.env['MONGO_URL'] || "mongodb://#{process.env['MONGO_HOST'] or '127.0.0.1'}/sharelatex"
 		poolSize: parseInt(process.env['MONGO_POOL_SIZE'], 10) || 10
+		socketTimeoutMS: parseInt(process.env['MONGO_SOCKET_TIMEOUT'], 10) || 30000
 
 	redis:
 		web:
@@ -190,13 +196,23 @@ module.exports = settings =
 	# that are sent out, generated links, etc.
 	siteUrl : siteUrl = process.env['PUBLIC_URL'] or 'http://localhost:3000'
 
+	lockManager:
+		lockTestInterval: intFromEnv('LOCK_MANAGER_LOCK_TEST_INTERVAL', 50)
+		maxTestInterval: intFromEnv('LOCK_MANAGER_MAX_TEST_INTERVAL', 1000)
+		maxLockWaitTime: intFromEnv('LOCK_MANAGER_MAX_LOCK_WAIT_TIME', 10000)
+		redisLockExpiry: intFromEnv('LOCK_MANAGER_REDIS_LOCK_EXPIRY', 30)
+		slowExecutionThreshold: intFromEnv('LOCK_MANAGER_SLOW_EXECUTION_THRESHOLD', 5000)
 
 	# Used to close the editor off to users
 	editorIsOpen: process.env['EDITOR_IS_OPEN'] or true
 	
 	# Optional separate location for websocket connections, if unset defaults to siteUrl.
 	wsUrl: process.env['WEBSOCKET_URL']
+	wsUrlV2: process.env['WEBSOCKET_URL_V2']
 	wsUrlBeta: process.env['WEBSOCKET_URL_BETA']
+
+	wsUrlV2Percentage: parseInt(process.env['WEBSOCKET_URL_V2_PERCENTAGE'] || '0', 10)
+	wsRetryHandshake: parseInt(process.env['WEBSOCKET_RETRY_HANDSHAKE'] || '5', 10)
 
 	# cookie domain
 	# use full domain for cookies to only be accessible from that domain,
@@ -216,17 +232,20 @@ module.exports = settings =
 	
 	maxUploadSize: 50 * 1024 * 1024 # 50 MB
 
+	# start failing the health check if active handles exceeds this limit
+	maxActiveHandles: if process.env['MAX_ACTIVE_HANDLES'] then parseInt(process.env['MAX_ACTIVE_HANDLES'], 10)
+
 	# Security
 	# --------
 	security:
 		sessionSecret: sessionSecret
-		bcryptRounds: 12 # number of rounds used to hash user passwords (raised to power 2)
+		bcryptRounds: (parseInt(process.env['BCRYPT_ROUNDS'], 10) || 12) # number of rounds used to hash user passwords (raised to power 2)
 
 	httpAuthUsers: httpAuthUsers
 
 	twoFactorAuthentication:
-		enabled: false
-		requiredForStaff: false
+		enabled: process.env['TWO_FACTOR_AUTHENTICATION_ENABLED'] == 'true'
+		requiredForStaff: process.env['TWO_FACTOR_AUTHENTICATION_REQUIRED_FOR_STAFF'] == 'true'
 
 	# Default features
 	# ----------------
@@ -370,17 +389,15 @@ module.exports = settings =
 	# tenderUrl: ""
 	#
 	# Client-side error logging is provided by getsentry.com
-	# sentry:
-	#   src: ""
+	sentry:
+		environment: process.env['SENTRY_ENVIRONMENT']
+		release: process.env['SENTRY_RELEASE']
 	#   publicDSN: ""
-	#
-	# src should be either a remote url like
-	#    //cdn.ravenjs.com/1.1.22/jquery,native/raven.min.js
-	# or a local file in the js/libs directory.
 	# The publicDSN is the token for the client-side getSentry service.
 
 	# Production Settings
 	# -------------------
+	debugPugTemplates: process.env['DEBUG_PUG_TEMPLATES'] == 'true'
 
 	# Should javascript assets be served minified or not. Note that you will
 	# need to run `grunt compile:minify` within the web-sharelatex directory
@@ -404,6 +421,9 @@ module.exports = settings =
 	# then set this to true to allow it to correctly detect the forwarded IP
 	# address and http/https protocol information.
 	behindProxy: false
+
+	# Expose the hostname in the `X-Served-By` response header
+	exposeHostname: process.env['EXPOSE_HOSTNAME'] == 'true'
 
 	# Cookie max age (in milliseconds). Set to false for a browser session.
 	cookieSessionLength: 5 * 24 * 60 * 60 * 1000 # 5 days
@@ -451,8 +471,8 @@ module.exports = settings =
 		# If we ever need to write something to disk (e.g. incoming requests
 		# that need processing but may be too big for memory, then write
 		# them to disk here).
-		dumpFolder: "/data/dumpFolder"
-		uploadFolder: "/data/uploads"
+		dumpFolder: "./data/dumpFolder"
+		uploadFolder: "./data/uploads"
 
 	# Automatic Snapshots
 	# -------------------
@@ -479,6 +499,7 @@ module.exports = settings =
 	appName: process.env['APP_NAME'] or "ShareLaTeX (Community Edition)"
 
 	adminEmail: process.env['ADMIN_EMAIL'] or "placeholder@example.com"
+	adminDomains: JSON.parse(process.env['ADMIN_DOMAINS'] or 'null')
 
 	salesEmail: process.env['SALES_EMAIL'] or "placeholder@example.com"
 
@@ -539,6 +560,8 @@ module.exports = settings =
 		"/templates/index": "/templates/"
 
 	reloadModuleViewsOnEachRequest: process.env['NODE_ENV'] == 'development'
+	disableModule:
+		'user-activate': process.env['DISABLE_MODULE_USER_ACTIVATE'] == 'true'
 
 	domainLicences: [
 

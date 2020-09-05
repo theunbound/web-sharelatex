@@ -1,35 +1,20 @@
-define([
-  'core-js/stable/symbol',
-  'core-js/stable/symbol/async-iterator',
-  'core-js/stable/symbol/description',
-  'core-js/stable/symbol/has-instance',
-  'core-js/stable/symbol/is-concat-spreadable',
-  'core-js/stable/symbol/iterator',
-  'core-js/stable/symbol/match',
-  'core-js/stable/symbol/replace',
-  'core-js/stable/symbol/search',
-  'core-js/stable/symbol/species',
-  'core-js/stable/symbol/split',
-  'core-js/stable/symbol/to-primitive',
-  'core-js/stable/symbol/to-string-tag',
-  'core-js/stable/symbol/unscopables',
-  'core-js/stable/symbol/for',
-  'core-js/stable/symbol/key-for',
-  'core-js/stable/object/get-own-property-symbols',
-  'core-js/stable/math/to-string-tag',
-  'core-js/stable/array/fill',
-  'core-js/stable/array/from',
-  'core-js/stable/array/includes',
-  'jquery',
-  'angular',
-  'angular-sanitize',
-  'lodash',
-  'libs/angular-autocomplete/angular-autocomplete',
-  'libs/ui-bootstrap',
-  'libs/ng-context-menu-0.1.4',
-  'libs/jquery.storage',
-  'libs/angular-cookie',
-  'libs/passfield',
-  'libs/ng-tags-input-3.0.0',
-  'libs/select/select'
-], function() {})
+import 'jquery'
+import 'angular'
+import 'angular-sanitize'
+import 'lodash'
+import 'libs/angular-autocomplete/angular-autocomplete'
+import 'libs/ui-bootstrap'
+import 'libs/ng-context-menu-0.1.4'
+import 'libs/jquery.storage'
+import 'libs/angular-cookie'
+import 'libs/passfield'
+import 'libs/ng-tags-input-3.0.0'
+import 'libs/select/select'
+
+// Polyfill fetch for IE11
+import 'isomorphic-unfetch'
+
+// Configure dynamically loaded assets (via webpack) to be downloaded from CDN
+// See: https://webpack.js.org/guides/public-path/#on-the-fly
+// eslint-disable-next-line no-undef, camelcase
+__webpack_public_path__ = window.baseAssetPath

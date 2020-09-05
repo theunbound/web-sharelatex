@@ -12,7 +12,7 @@ aside.chat(
 		.infinite-scroll-inner
 			.loading(ng-show="chat.loading")
 				i.fa.fa-fw.fa-spin.fa-refresh
-				| &nbsp;&nbsp;#{translate("loading")}...
+				| &nbsp;&nbsp;#{translate("loading")}…
 			.no-messages.text-center.small(ng-show='!chat.loading && chat.messages.length == 0')
 				| #{translate("no_messages")}
 			.first-message.text-center(ng-show='!chat.loading && chat.messages.length == 0')
@@ -28,8 +28,6 @@ aside.chat(
 					ng-class="{'self': message.user.id == user.id }"
 				)
 					div.date(ng-if="$index == 0 || (message.timestamp - chat.messages[$index - 1].timestamp) > 5 * 60 * 1000") {{ message.timestamp | formatDate:'h:mm a' }} {{ message.timestamp | relativeDate }}
-					span.avatar
-						img(ng-src="{{message.user.gravatar_url}}?d=mm&s=50")
 					div.message-wrapper
 						.name(ng-if="message.user.id != user.id")
 							span(ng-if="message.user.first_name") {{ message.user.first_name }}
@@ -37,7 +35,7 @@ aside.chat(
 						.message(
 							ng-style="getMessageStyle(message.user);"
 						)
-							.arrow(ng-style="getArrowStyle(message.user)")
+							.arrow(ng-if="message.user.id != user.id" ng-style="getArrowStyle(message.user)")
 							.message-content
 								p(
 									mathjax,
@@ -48,10 +46,8 @@ aside.chat(
 
 	.new-message
 		textarea(
-			placeholder=translate('your_message')+"...",
+			placeholder=translate('your_message')+"…",
 			on-enter="sendMessage()",
 			ng-model="newMessageContent",
 			ng-click="resetUnreadMessages()"
 		)
-
-

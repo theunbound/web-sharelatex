@@ -23,10 +23,24 @@ define(function() {
     iterationCount = 0;
     while (match = re.exec(text)) {
       iterationCount += 1;
-      if (iterationCount >= 10000) {
-        return result;
-      }
       newEntry = process(match);
+
+      // Too many log entries can cause browser crashes
+      // Construct a too many files error from the last match
+      var maxErrors = 100;
+      if (iterationCount >= maxErrors) {
+        var level = newEntry.level + "s";
+        newEntry.message = [
+          "Over",
+          maxErrors,
+          level,
+          "returned. Download raw logs to see full list"
+        ].join(" ");
+        newEntry.line = undefined;
+        result.unshift(newEntry);
+        return [result, ""];
+      }
+
       result.push(newEntry);
       text = (match.input.slice(0, match.index)) + (match.input.slice(match.index + match[0].length + 1, match.input.length));
     }
@@ -37,6 +51,8 @@ define(function() {
   MULTILINE_ERROR_REGEX = /^(.*)---line (\d+) of file (.*)\n([^]+?)\nI'm skipping whatever remains of this entry$/m;
   BAD_CROSS_REFERENCE_REGEX = /^(A bad cross reference---entry ".+?"\nrefers to entry.+?, which doesn't exist)$/m;
   MULTILINE_COMMAND_ERROR_REGEX = /^(.*)\n?---line (\d+) of file (.*)\n([^]+?)\nI'm skipping whatever remains of this command$/m;
+  // Errors hit in BST file have a slightly different format
+  BST_ERROR_REGEX = /^(.*?)\nwhile executing---line (\d+) of file (.*)/m;
   warningParsers = [
     [
       MULTILINE_WARNING_REGEX, function(match) {
@@ -101,8 +117,21 @@ define(function() {
           raw: fullMatch
         };
       }
+    ],[
+      BST_ERROR_REGEX, function(match) {
+        var fileName, firstMessage, fullMatch, lineNumber, secondMessage;
+        fullMatch = match[0], firstMessage = match[1], lineNumber = match[2], fileName = match[3];
+        return {
+          file: fileName,
+          level: "error",
+          message: firstMessage,
+          line: lineNumber,
+          raw: fullMatch
+        };
+      }
     ]
   ];
+
   (function() {
     this.parseBibtex = function() {
       var allErrors, allWarnings, ref, ref1, remainingText, result;

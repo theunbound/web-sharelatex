@@ -31,12 +31,22 @@ include ../../_mixins/saml
 							span(ng-show="notification.inflight")
 								i.fa.fa-fw.fa-spinner.fa-spin(aria-hidden="true")
 								| &nbsp;
-								| #{translate("joining")}...
+								| #{translate("joining")}…
 					.notification-close
 						button(ng-click="dismiss(notification)").close.pull-right
 							span(aria-hidden="true") &times;
 							span.sr-only #{translate("close")}
-
+				.alert.alert-info(
+					ng-switch-when="wfh_2020_upgrade_offer"
+				)
+					.notification-body
+						span Important notice: Your free WFH2020 upgrade came to an end on June 30th 2020. We're providing specially discounted annual plans to help you continue collaborating throughout 2020.
+					.notification-action
+						a.pull-right.btn.btn-sm.btn-info(href="https://www.overleaf.com/events/wfh2020") Upgrade
+					.notification-close
+						button(ng-click="dismiss(notification)").close.pull-right
+							span(aria-hidden="true") &times;
+							span.sr-only #{translate("close")}
 				.alert.alert-info(
 					ng-switch-when="notification_ip_matched_affiliation"
 				)
@@ -97,10 +107,6 @@ include ../../_mixins/saml
 					.notification-action
 						a.btn.btn-sm.btn-info(href="{{samlInitPath}}?university_id={{notification.institutionId}}&auto=/project&email={{notification.email}}")
 							| #{translate('link_account')}
-					.notification-close
-						button(ng-click="dismiss(notification)").close.pull-right
-							span(aria-hidden="true") &times;
-							span.sr-only #{translate("close")}
 
 				.alert.alert-info(
 					ng-switch-when="notification_institution_sso_linked"
@@ -181,3 +187,21 @@ include ../../_mixins/saml
 					i.fa.fa-spinner.fa-spin(aria-hidden="true")
 					|
 					| #{translate('resending_confirmation_email')}&hellip;
+	- var hasPaidAffiliation = userAffiliations.some(affiliation => affiliation.licence && affiliation.licence !== 'free')
+	if settings.enableSubscriptions && !hasSubscription && !hasPaidAffiliation
+		ul.list-unstyled(
+			ng-controller="DismissableNotificationsController",
+			ng-cloak
+		)
+			li.notification-entry(
+				ng-if="shouldShowNotification && projects.length > 0"
+			)
+				.alert.alert-info
+					.notification-body
+						span To help you work from home throughout 2020 and beyond, we're providing specially discounted annual plans.
+					.notification-action
+						a.pull-right.btn.btn-sm.btn-info(href="https://www.overleaf.com/events/wfh2020") Upgrade
+					.notification-close
+						button(ng-click="dismiss()").close.pull-right
+							span(aria-hidden="true") &times;
+							span.sr-only #{translate("close")}

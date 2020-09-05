@@ -1,4 +1,5 @@
 const AuthenticationManager = require('./AuthenticationManager')
+const OError = require('@overleaf/o-error')
 const LoginRateLimiter = require('../Security/LoginRateLimiter')
 const UserUpdater = require('../User/UserUpdater')
 const Metrics = require('metrics-sharelatex')
@@ -17,8 +18,16 @@ const UrlHelper = require('../Helpers/UrlHelper')
 const AsyncFormHelper = require('../Helpers/AsyncFormHelper')
 const SudoModeHandler = require('../SudoMode/SudoModeHandler')
 const _ = require('lodash')
+const {
+  acceptsJson
+} = require('../../infrastructure/RequestContentTypeDetection')
 
-const AuthenticationController = (module.exports = {
+function send401WithChallenge(res) {
+  res.setHeader('WWW-Authenticate', 'OverleafLogin')
+  res.sendStatus(401)
+}
+
+const AuthenticationController = {
   serializeUser(user, callback) {
     if (!user._id || !user.email) {
       const err = new Error('serializeUser called with non-user object')
@@ -43,50 +52,6 @@ const AuthenticationController = (module.exports = {
 
   deserializeUser(user, cb) {
     cb(null, user)
-  },
-
-  afterLoginSessionSetup(req, user, callback) {
-    if (callback == null) {
-      callback = function() {}
-    }
-    req.login(user, function(err) {
-      if (err) {
-        logger.warn({ user_id: user._id, err }, 'error from req.login')
-        return callback(err)
-      }
-      // Regenerate the session to get a new sessionID (cookie value) to
-      // protect against session fixation attacks
-      const oldSession = req.session
-      req.session.destroy(function(err) {
-        if (err) {
-          logger.warn(
-            { user_id: user._id, err },
-            'error when trying to destroy old session'
-          )
-          return callback(err)
-        }
-        req.sessionStore.generate(req)
-        // Note: the validation token is not writable, so it does not get
-        // transferred to the new session below.
-        for (let key in oldSession) {
-          const value = oldSession[key]
-          if (key !== '__tmp') {
-            req.session[key] = value
-          }
-        }
-        req.session.save(function(err) {
-          if (err) {
-            logger.warn(
-              { user_id: user._id },
-              'error saving regenerated session after login'
-            )
-            return callback(err)
-          }
-          UserSessionsManager.trackSession(user, req.sessionID, function() {})
-          callback(null)
-        })
-      })
-    })
   },
 
   passportLogin(req, res, next) {
@@ -124,7 +89,7 @@ const AuthenticationController = (module.exports = {
         return next(error)
       }
       if (results.some(result => result && result.doNotFinish)) {
-        return next()
+        return
       }
 
       if (user.must_reconfirm) {
@@ -133,8 +98,8 @@ const AuthenticationController = (module.exports = {
 
       const redir =
         AuthenticationController._getRedirectFromSession(req) || '/project'
-      AuthenticationController._loginAsyncHandlers(req, user)
-      AuthenticationController.afterLoginSessionSetup(req, user, function(err) {
+      _loginAsyncHandlers(req, user)
+      _afterLoginSessionSetup(req, user, function(err) {
         if (err) {
           return next(err)
         }
@@ -200,26 +165,6 @@ const AuthenticationController = (module.exports = {
     })
   },
 
-  _loginAsyncHandlers(req, user) {
-    UserHandler.setupLoginData(user, err => {
-      if (err != null) {
-        logger.warn({ err }, 'error setting up login data')
-      }
-    })
-    LoginRateLimiter.recordSuccessfulLogin(user.email)
-    AuthenticationController._recordSuccessfulLogin(user._id)
-    AuthenticationController.ipMatchCheck(req, user)
-    Analytics.recordEvent(user._id, 'user-logged-in', { ip: req.ip })
-    Analytics.identifyUser(user._id, req.sessionID)
-    logger.log(
-      { email: user.email, user_id: user._id.toString() },
-      'successful log in'
-    )
-    req.session.justLoggedIn = true
-    // capture the request ip for use when creating the session
-    return (user._login_req_ip = req.ip)
-  },
-
   ipMatchCheck(req, user) {
     if (req.ip !== user.lastLoginIp) {
       NotificationsBuilder.ipMatcherAffiliation(user._id).create(req.ip)
@@ -277,6 +222,7 @@ const AuthenticationController = (module.exports = {
         next = function() {}
       }
       if (!AuthenticationController.isUserLoggedIn(req)) {
+        if (acceptsJson(req)) return send401WithChallenge(res)
         return AuthenticationController._redirectToLoginOrRegisterPage(req, res)
       } else {
         req.user = AuthenticationController.getSessionUser(req)
@@ -336,6 +282,7 @@ const AuthenticationController = (module.exports = {
           // need to destroy the existing session and generate a new one
           // otherwise they will already be logged in when they are redirected
           // to the login page
+          if (acceptsJson(req)) return send401WithChallenge(res)
           AuthenticationController._redirectToLoginOrRegisterPage(req, res)
         })
       } else {
@@ -367,9 +314,41 @@ const AuthenticationController = (module.exports = {
         { url: req.url },
         'user trying to access endpoint not in global whitelist'
       )
+      if (acceptsJson(req)) return send401WithChallenge(res)
       AuthenticationController.setRedirectInSession(req)
       res.redirect('/login')
     }
+  },
+
+  validateAdmin(req, res, next) {
+    const adminDomains = Settings.adminDomains
+    if (
+      !adminDomains ||
+      !(Array.isArray(adminDomains) && adminDomains.length)
+    ) {
+      return next()
+    }
+    const user = AuthenticationController.getSessionUser(req)
+    if (!(user && user.isAdmin)) {
+      return next()
+    }
+    const email = user.email
+    if (email == null) {
+      return next(
+        new OError('[ValidateAdmin] Admin user without email address', {
+          userId: user._id
+        })
+      )
+    }
+    if (!adminDomains.find(domain => email.endsWith(`@${domain}`))) {
+      return next(
+        new OError('[ValidateAdmin] Admin user with invalid email domain', {
+          email: email,
+          userId: user._id
+        })
+      )
+    }
+    return next()
   },
 
   httpAuth: basicAuth(function(user, pass) {
@@ -484,4 +463,69 @@ const AuthenticationController = (module.exports = {
       delete req.session.postLoginRedirect
     }
   }
-})
+}
+
+function _afterLoginSessionSetup(req, user, callback) {
+  if (callback == null) {
+    callback = function() {}
+  }
+  req.login(user, function(err) {
+    if (err) {
+      OError.tag(err, 'error from req.login', {
+        user_id: user._id
+      })
+      return callback(err)
+    }
+    // Regenerate the session to get a new sessionID (cookie value) to
+    // protect against session fixation attacks
+    const oldSession = req.session
+    req.session.destroy(function(err) {
+      if (err) {
+        OError.tag(err, 'error when trying to destroy old session', {
+          user_id: user._id
+        })
+        return callback(err)
+      }
+      req.sessionStore.generate(req)
+      // Note: the validation token is not writable, so it does not get
+      // transferred to the new session below.
+      for (let key in oldSession) {
+        const value = oldSession[key]
+        if (key !== '__tmp') {
+          req.session[key] = value
+        }
+      }
+      req.session.save(function(err) {
+        if (err) {
+          OError.tag(err, 'error saving regenerated session after login', {
+            user_id: user._id
+          })
+          return callback(err)
+        }
+        UserSessionsManager.trackSession(user, req.sessionID, function() {})
+        callback(null)
+      })
+    })
+  })
+}
+function _loginAsyncHandlers(req, user) {
+  UserHandler.setupLoginData(user, err => {
+    if (err != null) {
+      logger.warn({ err }, 'error setting up login data')
+    }
+  })
+  LoginRateLimiter.recordSuccessfulLogin(user.email)
+  AuthenticationController._recordSuccessfulLogin(user._id)
+  AuthenticationController.ipMatchCheck(req, user)
+  Analytics.recordEvent(user._id, 'user-logged-in', { ip: req.ip })
+  Analytics.identifyUser(user._id, req.sessionID)
+  logger.log(
+    { email: user.email, user_id: user._id.toString() },
+    'successful log in'
+  )
+  req.session.justLoggedIn = true
+  // capture the request ip for use when creating the session
+  return (user._login_req_ip = req.ip)
+}
+
+module.exports = AuthenticationController

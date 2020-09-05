@@ -9,15 +9,17 @@ const metrics = require('metrics-sharelatex')
 const AuthenticationManager = require('../Authentication/AuthenticationManager')
 const AuthenticationController = require('../Authentication/AuthenticationController')
 const Features = require('../../infrastructure/Features')
+const UserAuditLogHandler = require('./UserAuditLogHandler')
 const UserSessionsManager = require('./UserSessionsManager')
 const UserUpdater = require('./UserUpdater')
 const SudoModeHandler = require('../SudoMode/SudoModeHandler')
 const Errors = require('../Errors/Errors')
+const HttpErrorHandler = require('../Errors/HttpErrorHandler')
 const OError = require('@overleaf/o-error')
-const HttpErrors = require('@overleaf/o-error/http')
 const EmailHandler = require('../Email/EmailHandler')
 const UrlHelper = require('../Helpers/UrlHelper')
 const { promisify } = require('util')
+const { expressify } = require('../../util/promises')
 
 async function _ensureAffiliation(userId, emailData) {
   if (emailData.samlProviderId) {
@@ -25,6 +27,107 @@ async function _ensureAffiliation(userId, emailData) {
   } else {
     await UserUpdater.promises.addAffiliationForNewUser(userId, emailData.email)
   }
+}
+
+async function changePassword(req, res, next) {
+  metrics.inc('user.password-change')
+  const userId = AuthenticationController.getLoggedInUserId(req)
+
+  const user = await AuthenticationManager.promises.authenticate(
+    { _id: userId },
+    req.body.currentPassword
+  )
+  if (!user) {
+    return HttpErrorHandler.badRequest(req, res, 'Your old password is wrong')
+  }
+
+  if (req.body.newPassword1 !== req.body.newPassword2) {
+    return HttpErrorHandler.badRequest(
+      req,
+      res,
+      req.i18n.translate('password_change_passwords_do_not_match')
+    )
+  }
+  const validationError = AuthenticationManager.validatePassword(
+    req.body.newPassword1
+  )
+  if (validationError != null) {
+    return HttpErrorHandler.badRequest(req, res, validationError.message)
+  }
+
+  await UserAuditLogHandler.promises.addEntry(
+    user._id,
+    'update-password',
+    user._id,
+    req.ip
+  )
+
+  await AuthenticationManager.promises.setUserPassword(
+    user._id,
+    req.body.newPassword1
+  )
+
+  const emailOptions = {
+    to: user.email,
+    actionDescribed: `your password has been changed on your account ${
+      user.email
+    }`,
+    action: 'password changed'
+  }
+  EmailHandler.sendEmail('securityAlert', emailOptions, error => {
+    if (error) {
+      // log error when sending security alert email but do not pass back
+      logger.error({ err: error })
+    }
+  })
+
+  await UserSessionsManager.promises.revokeAllUserSessions(user, [
+    req.sessionID
+  ])
+
+  return res.json({
+    message: {
+      type: 'success',
+      email: user.email,
+      text: req.i18n.translate('password_change_successful')
+    }
+  })
+}
+
+async function clearSessions(req, res, next) {
+  metrics.inc('user.clear-sessions')
+  const user = AuthenticationController.getSessionUser(req)
+  const sessions = await UserSessionsManager.promises.getAllUserSessions(user, [
+    req.sessionID
+  ])
+  await UserAuditLogHandler.promises.addEntry(
+    user._id,
+    'clear-sessions',
+    user._id,
+    req.ip,
+    { sessions }
+  )
+  await UserSessionsManager.promises.revokeAllUserSessions(user, [
+    req.sessionID
+  ])
+  const emailOptions = {
+    to: user.email,
+    actionDescribed: `active sessions were cleared on your account ${
+      user.email
+    }`,
+    action: 'active sessions cleared'
+  }
+
+  try {
+    await EmailHandler.promises.sendEmail('securityAlert', emailOptions)
+  } catch (error) {
+    logger.error(
+      { userId: user._id },
+      'could not send security alert email when sessions cleared'
+    )
+  }
+
+  res.sendStatus(201)
 }
 
 async function ensureAffiliation(user) {
@@ -67,6 +170,8 @@ async function ensureAffiliationMiddleware(req, res, next) {
 }
 
 const UserController = {
+  clearSessions: expressify(clearSessions),
+
   tryDeleteUser(req, res, next) {
     const userId = AuthenticationController.getLoggedInUserId(req)
     const { password } = req.body
@@ -83,9 +188,12 @@ const UserController = {
       password,
       (err, user) => {
         if (err != null) {
-          logger.warn(
-            { userId },
-            'error authenticating during attempt to delete account'
+          OError.tag(
+            err,
+            'error authenticating during attempt to delete account',
+            {
+              userId
+            }
           )
           return next(err)
         }
@@ -108,13 +216,15 @@ const UserController = {
                 errorData.info.public = {
                   error: 'SubscriptionAdminDeletionError'
                 }
-                return next(
-                  new HttpErrors.UnprocessableEntityError(errorData).withCause(
-                    err
-                  )
+                logger.warn(OError.tag(err, errorData.message, errorData.info))
+                return HttpErrorHandler.unprocessableEntity(
+                  req,
+                  res,
+                  errorData.message,
+                  errorData.info.public
                 )
               } else {
-                return next(new OError(errorData).withCause(err))
+                return next(OError.tag(err, errorData.message, errorData.info))
               }
             }
             const sessionId = req.sessionID
@@ -123,7 +233,7 @@ const UserController = {
             }
             req.session.destroy(err => {
               if (err != null) {
-                logger.warn({ err }, 'error destorying session')
+                OError.tag(err, 'error destroying session')
                 return next(err)
               }
               UserSessionsManager.untrackSession(user, sessionId)
@@ -148,7 +258,7 @@ const UserController = {
             'Failed to unsubscribe user from newsletter'
           )
         }
-        res.send()
+        res.sendStatus(200)
       })
     })
   },
@@ -231,25 +341,26 @@ const UserController = {
           res.sendStatus(400)
         } else {
           // update the user email
-          UserUpdater.changeEmailAddress(userId, newEmail, err => {
+          const auditLog = {
+            initiatorId: userId,
+            ipAddress: req.ip
+          }
+          UserUpdater.changeEmailAddress(userId, newEmail, auditLog, err => {
             if (err) {
-              let errorData = {
-                message: 'problem updaing users email address',
-                info: { userId, newEmail, public: {} }
-              }
               if (err instanceof Errors.EmailExistsError) {
-                errorData.info.public.message = req.i18n.translate(
+                const translation = req.i18n.translate(
                   'email_already_registered'
                 )
-                return next(
-                  new HttpErrors.ConflictError(errorData).withCause(err)
-                )
+                return HttpErrorHandler.conflict(req, res, translation)
               } else {
-                errorData.info.public.message = req.i18n.translate(
-                  'problem_changing_email_address'
-                )
-                next(
-                  new HttpErrors.InternalServerError(errorData).withCause(err)
+                return HttpErrorHandler.legacyInternal(
+                  req,
+                  res,
+                  req.i18n.translate('problem_changing_email_address'),
+                  OError.tag(err, 'problem_changing_email_address', {
+                    userId,
+                    newEmail
+                  })
                 )
               }
             }
@@ -259,7 +370,7 @@ const UserController = {
                   { err, userId },
                   'error getting user for email update'
                 )
-                return res.send(500)
+                return res.sendStatus(500)
               }
               AuthenticationController.setInSessionUser(req, {
                 email: user.email,
@@ -290,7 +401,7 @@ const UserController = {
     } // passport logout
     req.session.destroy(err => {
       if (err) {
-        logger.warn({ err }, 'error destorying session')
+        OError.tag(err, 'error destroying session')
         return cb(err)
       }
       if (user != null) {
@@ -355,95 +466,7 @@ const UserController = {
     )
   },
 
-  clearSessions(req, res, next) {
-    metrics.inc('user.clear-sessions')
-    const user = AuthenticationController.getSessionUser(req)
-    UserSessionsManager.revokeAllUserSessions(user, [req.sessionID], err => {
-      if (err != null) {
-        return next(err)
-      }
-      res.sendStatus(201)
-    })
-  },
-
-  changePassword(req, res, next) {
-    metrics.inc('user.password-change')
-    const internalError = {
-      message: { type: 'error', text: req.i18n.translate('internal_error') }
-    }
-    const userId = AuthenticationController.getLoggedInUserId(req)
-    AuthenticationManager.authenticate(
-      { _id: userId },
-      req.body.currentPassword,
-      (err, user) => {
-        if (err) {
-          return res.status(500).json(internalError)
-        }
-        if (!user) {
-          return res.status(400).json({
-            message: {
-              type: 'error',
-              text: 'Your old password is wrong'
-            }
-          })
-        }
-        if (req.body.newPassword1 !== req.body.newPassword2) {
-          return res.status(400).json({
-            message: {
-              type: 'error',
-              text: req.i18n.translate('password_change_passwords_do_not_match')
-            }
-          })
-        }
-        const validationError = AuthenticationManager.validatePassword(
-          req.body.newPassword1
-        )
-        if (validationError != null) {
-          return res.status(400).json({
-            message: {
-              type: 'error',
-              text: validationError.message
-            }
-          })
-        }
-        AuthenticationManager.setUserPassword(
-          user._id,
-          req.body.newPassword1,
-          err => {
-            if (err) {
-              return res.status(500).json(internalError)
-            }
-            // log errors but do not wait for response
-            EmailHandler.sendEmail(
-              'passwordChanged',
-              { to: user.email },
-              err => {
-                if (err) {
-                  logger.warn(err)
-                }
-              }
-            )
-            UserSessionsManager.revokeAllUserSessions(
-              user,
-              [req.sessionID],
-              err => {
-                if (err != null) {
-                  return res.status(500).json(internalError)
-                }
-                res.json({
-                  message: {
-                    type: 'success',
-                    email: user.email,
-                    text: req.i18n.translate('password_change_successful')
-                  }
-                })
-              }
-            )
-          }
-        )
-      }
-    )
-  }
+  changePassword: expressify(changePassword)
 }
 
 UserController.promises = {

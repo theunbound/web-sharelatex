@@ -6,15 +6,27 @@ const settings = require('settings-sharelatex')
 // of object)
 class BackwardCompatibleError extends OError {
   constructor(messageOrOptions) {
-    let options
     if (typeof messageOrOptions === 'string') {
-      options = { message: messageOrOptions }
-    } else if (!messageOrOptions) {
-      options = {}
+      super(messageOrOptions)
+    } else if (messageOrOptions) {
+      const { message, info } = messageOrOptions
+      super(message, info)
     } else {
-      options = messageOrOptions
+      super()
     }
-    super(options)
+  }
+}
+
+// Error class that facilitates the migration to OError v3 by providing
+// a signature in which the 2nd argument can be an object containing
+// the `info` object.
+class OErrorV2CompatibleError extends OError {
+  constructor(message, options) {
+    if (options) {
+      super(message, options.info)
+    } else {
+      super(message)
+    }
   }
 }
 
@@ -30,6 +42,8 @@ class InvalidNameError extends BackwardCompatibleError {}
 
 class UnsupportedFileTypeError extends BackwardCompatibleError {}
 
+class FileTooLargeError extends BackwardCompatibleError {}
+
 class UnsupportedExportRecordsError extends BackwardCompatibleError {}
 
 class V1HistoryNotSyncedError extends BackwardCompatibleError {}
@@ -40,12 +54,9 @@ class V1ConnectionError extends BackwardCompatibleError {}
 
 class UnconfirmedEmailError extends BackwardCompatibleError {}
 
-class EmailExistsError extends OError {
+class EmailExistsError extends OErrorV2CompatibleError {
   constructor(options) {
-    super({
-      message: 'Email already exists',
-      ...options
-    })
+    super('Email already exists', options)
   }
 }
 
@@ -98,16 +109,8 @@ class SAMLSessionDataMissing extends BackwardCompatibleError {
         settings.appName
       }. Please contact your IT department if you have any questions.`
     } else if (!institutionEmail) {
-      this.message = 'Unable to confirm your institution email.'
-    }
-  }
-}
-
-class SAMLUserNotFoundError extends BackwardCompatibleError {
-  constructor(arg) {
-    super(arg)
-    if (!this.message) {
-      this.message = 'user not found for SAML provider and external id'
+      this.message =
+        'Unable to confirm your institutional email address. The institutional identity provider did not provide an email address in the expected attribute. Please contact us if this keeps happening.'
     }
   }
 }
@@ -131,47 +134,45 @@ class ThirdPartyUserNotFoundError extends BackwardCompatibleError {
   }
 }
 
-class SubscriptionAdminDeletionError extends OError {
+class SubscriptionAdminDeletionError extends OErrorV2CompatibleError {
   constructor(options) {
-    super({
-      message: 'subscription admins cannot be deleted',
-      ...options
-    })
+    super('subscription admins cannot be deleted', options)
   }
 }
 
-class ProjectNotFoundError extends OError {
+class ProjectNotFoundError extends OErrorV2CompatibleError {
   constructor(options) {
-    super({
-      message: 'project not found',
-      ...options
-    })
+    super('project not found', options)
   }
 }
 
-class UserNotFoundError extends OError {
+class UserNotFoundError extends OErrorV2CompatibleError {
   constructor(options) {
-    super({
-      message: 'user not found',
-      ...options
-    })
+    super('user not found', options)
   }
 }
 
-class UserNotCollaboratorError extends OError {
+class UserNotCollaboratorError extends OErrorV2CompatibleError {
   constructor(options) {
-    super({
-      message: 'user not a collaborator',
-      ...options
-    })
+    super('user not a collaborator', options)
   }
 }
 
-class DocHasRangesError extends OError {
+class DocHasRangesError extends OErrorV2CompatibleError {
   constructor(options) {
-    super({ message: 'document has ranges', ...options })
+    super('document has ranges', options)
   }
 }
+
+class InvalidQueryError extends OErrorV2CompatibleError {
+  constructor(options) {
+    super('invalid search query', options)
+  }
+}
+
+class ProjectIsArchivedOrTrashedError extends BackwardCompatibleError {}
+
+class AffiliationError extends OError {}
 
 module.exports = {
   OError,
@@ -182,6 +183,7 @@ module.exports = {
   TooManyRequestsError,
   InvalidNameError,
   UnsupportedFileTypeError,
+  FileTooLargeError,
   UnsupportedExportRecordsError,
   V1HistoryNotSyncedError,
   ProjectHistoryDisabledError,
@@ -192,7 +194,6 @@ module.exports = {
   NotInV2Error,
   SAMLIdentityExistsError,
   SAMLSessionDataMissing,
-  SAMLUserNotFoundError,
   SLInV2Error,
   ThirdPartyIdentityExistsError,
   ThirdPartyUserNotFoundError,
@@ -200,5 +201,8 @@ module.exports = {
   ProjectNotFoundError,
   UserNotFoundError,
   UserNotCollaboratorError,
-  DocHasRangesError
+  DocHasRangesError,
+  InvalidQueryError,
+  ProjectIsArchivedOrTrashedError,
+  AffiliationError
 }

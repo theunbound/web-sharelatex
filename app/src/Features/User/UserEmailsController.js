@@ -1,40 +1,66 @@
-let UserEmailsController
 const AuthenticationController = require('../Authentication/AuthenticationController')
 const UserGetter = require('./UserGetter')
 const UserUpdater = require('./UserUpdater')
+const EmailHandler = require('../Email/EmailHandler')
 const EmailHelper = require('../Helpers/EmailHelper')
+const UserAuditLogHandler = require('./UserAuditLogHandler')
 const UserEmailsConfirmationHandler = require('./UserEmailsConfirmationHandler')
 const { endorseAffiliation } = require('../Institutions/InstitutionsAPI')
 const Errors = require('../Errors/Errors')
-const HttpErrors = require('@overleaf/o-error/http')
+const HttpErrorHandler = require('../Errors/HttpErrorHandler')
+const { expressify } = require('../../util/promises')
 
-function add(req, res, next) {
+async function add(req, res, next) {
   const userId = AuthenticationController.getLoggedInUserId(req)
   const email = EmailHelper.parseEmail(req.body.email)
   if (!email) {
     return res.sendStatus(422)
   }
+  const user = await UserGetter.promises.getUser(userId, { email: 1 })
 
   const affiliationOptions = {
     university: req.body.university,
     role: req.body.role,
     department: req.body.department
   }
-  UserUpdater.addEmailAddress(userId, email, affiliationOptions, function(
-    error
-  ) {
-    if (error) {
-      return UserEmailsController._handleEmailError(error, req, res, next)
+
+  await UserAuditLogHandler.promises.addEntry(
+    user._id,
+    'add-email',
+    user._id,
+    req.ip,
+    {
+      newSecondaryEmail: email
     }
-    UserEmailsConfirmationHandler.sendConfirmationEmail(userId, email, function(
-      error
-    ) {
-      if (error) {
-        return next(error)
-      }
-      res.sendStatus(204)
-    })
-  })
+  )
+
+  try {
+    await UserUpdater.promises.addEmailAddress(
+      userId,
+      email,
+      affiliationOptions
+    )
+  } catch (error) {
+    return UserEmailsController._handleEmailError(error, req, res, next)
+  }
+
+  const emailOptions = {
+    to: user.email,
+    actionDescribed: `a secondary email address has been added to your account ${
+      user.email
+    }`,
+    message: [
+      `<span style="display:inline-block;padding: 0 20px;width:100%;">Added: <br/><b>${email}</b></span>`
+    ],
+    action: 'secondary email address added'
+  }
+  await EmailHandler.promises.sendEmail('securityAlert', emailOptions)
+  await UserEmailsConfirmationHandler.promises.sendConfirmationEmail(
+    userId,
+    email
+  )
+
+  res.sendStatus(204)
 }
 
 function resendConfirmation(req, res, next) {
@@ -61,7 +87,7 @@ function resendConfirmation(req, res, next) {
   })
 }
 
-module.exports = UserEmailsController = {
+const UserEmailsController = {
   list(req, res, next) {
     const userId = AuthenticationController.getLoggedInUserId(req)
     UserGetter.getUserFullEmails(userId, function(error, fullEmails) {
@@ -72,7 +98,7 @@ module.exports = UserEmailsController = {
     })
   },
 
-  add,
+  add: expressify(add),
 
   remove(req, res, next) {
     const userId = AuthenticationController.getLoggedInUserId(req)
@@ -95,13 +121,24 @@ module.exports = UserEmailsController = {
     if (!email) {
       return res.sendStatus(422)
     }
-    UserUpdater.setDefaultEmailAddress(userId, email, err => {
-      if (err) {
-        return UserEmailsController._handleEmailError(err, req, res, next)
+    const auditLog = {
+      initiatorId: userId,
+      ipAddress: req.ip
+    }
+    UserUpdater.setDefaultEmailAddress(
+      userId,
+      email,
+      false,
+      auditLog,
+      true,
+      err => {
+        if (err) {
+          return UserEmailsController._handleEmailError(err, req, res, next)
+        }
+        AuthenticationController.setInSessionUser(req, { email: email })
+        res.sendStatus(200)
       }
-      AuthenticationController.setInSessionUser(req, { email: email })
-      res.sendStatus(200)
-    })
+    )
   },
 
   endorse(req, res, next) {
@@ -158,32 +195,16 @@ module.exports = UserEmailsController = {
 
   _handleEmailError(error, req, res, next) {
     if (error instanceof Errors.UnconfirmedEmailError) {
-      return next(
-        new HttpErrors.ConflictError({
-          info: {
-            public: { message: 'email must be confirmed' }
-          }
-        }).withCause(error)
-      )
+      return HttpErrorHandler.conflict(req, res, 'email must be confirmed')
     } else if (error instanceof Errors.EmailExistsError) {
-      return next(
-        new HttpErrors.ConflictError({
-          info: {
-            public: { message: req.i18n.translate('email_already_registered') }
-          }
-        }).withCause(error)
-      )
+      const message = req.i18n.translate('email_already_registered')
+      return HttpErrorHandler.conflict(req, res, message)
     } else if (error.message === '422: Email does not belong to university') {
-      return next(
-        new HttpErrors.ConflictError({
-          info: {
-            public: {
-              message: req.i18n.translate('email_does_not_belong_to_university')
-            }
-          }
-        }).withCause(error)
-      )
+      const message = req.i18n.translate('email_does_not_belong_to_university')
+      return HttpErrorHandler.conflict(req, res, message)
     }
-    next(new HttpErrors.InternalServerError().withCause(error))
+    next(error)
   }
 }
+
+module.exports = UserEmailsController

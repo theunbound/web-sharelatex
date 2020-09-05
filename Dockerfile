@@ -1,31 +1,28 @@
-FROM node:10.19.0 as base
+# the base image is suitable for running web with /app bind mounted
+FROM node:10.21.0 as base
 
 WORKDIR /app
 
 # install_deps changes app files and installs npm packages
 # as such it has to run at a later stage
 
-FROM base as app
+RUN apt-get update \
+&&  apt-get install -y parallel \
+&&  rm -rf /var/lib/apt/lists/*
+
+
+# the deps image is used for caching npm ci
+FROM base as deps
 
 COPY package.json package-lock.json /app/
 
-RUN npm install --quiet
+RUN npm ci --quiet
+
+
+# the dev is suitable for running tests
+FROM deps as dev
 
 COPY . /app
-
-# Set environment variables for Sentry
-ARG SENTRY_RELEASE
-ARG BRANCH_NAME
-ENV SENTRY_RELEASE=$SENTRY_RELEASE
-ENV BRANCH_NAME=$BRANCH_NAME
-
-RUN chmod 0755 ./install_deps.sh && ./install_deps.sh
-
-FROM base
-
-COPY --from=app /app /app
-
-WORKDIR /app
 
 RUN mkdir -p /app/data/dumpFolder && \
   mkdir -p /app/data/logs && \
@@ -35,6 +32,23 @@ RUN mkdir -p /app/data/dumpFolder && \
   chmod -R 0755 /app/data/ && \
   chown -R node:node /app/data/
 
+ARG SENTRY_RELEASE
+ENV SENTRY_RELEASE=$SENTRY_RELEASE
+
+USER node
+
+
+# the webpack image has deps+src+webpack artifacts
+FROM dev as webpack
+
+USER root
+RUN chmod 0755 ./install_deps.sh && ./install_deps.sh
+
+
+# the final production image without webpack source maps
+FROM webpack as app
+
+RUN find /app/public -name '*.js.map' -delete
 USER node
 
 CMD ["node", "--expose-gc", "app.js"]

@@ -15,17 +15,20 @@
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
 let HistoryController
+const OError = require('@overleaf/o-error')
 const _ = require('lodash')
 const async = require('async')
 const logger = require('logger-sharelatex')
 const request = require('request')
 const settings = require('settings-sharelatex')
 const AuthenticationController = require('../Authentication/AuthenticationController')
+const UserGetter = require('../User/UserGetter')
 const Errors = require('../Errors/Errors')
 const HistoryManager = require('./HistoryManager')
 const ProjectDetailsHandler = require('../Project/ProjectDetailsHandler')
 const ProjectEntityUpdateHandler = require('../Project/ProjectEntityUpdateHandler')
 const RestoreManager = require('./RestoreManager')
+const { pipeline } = require('stream')
 
 module.exports = HistoryController = {
   selectHistoryApi(req, res, next) {
@@ -200,7 +203,12 @@ module.exports = HistoryController = {
         if (error != null) {
           return next(error)
         }
-        return res.json(labels)
+        HistoryController._enrichLabels(labels, (err, labels) => {
+          if (err) {
+            return next(err)
+          }
+          return res.json(labels)
+        })
       }
     )
   },
@@ -221,9 +229,84 @@ module.exports = HistoryController = {
         if (error != null) {
           return next(error)
         }
-        return res.json(label)
+        HistoryController._enrichLabel(label, (err, label) => {
+          if (err) {
+            return next(err)
+          }
+          return res.json(label)
+        })
       }
     )
+  },
+
+  _enrichLabel(label, callback) {
+    if (!label.user_id) {
+      return callback(null, label)
+    }
+    UserGetter.getUser(
+      label.user_id,
+      { first_name: 1, last_name: 1, email: 1 },
+      (err, user) => {
+        if (err) {
+          return callback(err)
+        }
+        const newLabel = Object.assign({}, label)
+        newLabel.user_display_name = HistoryController._displayNameForUser(user)
+        callback(null, newLabel)
+      }
+    )
+  },
+
+  _enrichLabels(labels, callback) {
+    if (!labels || !labels.length) {
+      return callback(null, [])
+    }
+    const uniqueUsers = new Set(labels.map(label => label.user_id))
+
+    // For backwards compatibility expect missing user_id fields
+    uniqueUsers.delete(undefined)
+
+    if (!uniqueUsers.size) {
+      return callback(null, labels)
+    }
+
+    UserGetter.getUsers(
+      Array.from(uniqueUsers),
+      { first_name: 1, last_name: 1, email: 1 },
+      function(err, rawUsers) {
+        if (err) {
+          return callback(err)
+        }
+        const users = new Map(rawUsers.map(user => [String(user._id), user]))
+
+        labels.forEach(label => {
+          const user = users.get(label.user_id)
+          if (!user) return
+          label.user_display_name = HistoryController._displayNameForUser(user)
+        })
+        callback(null, labels)
+      }
+    )
+  },
+
+  _displayNameForUser(user) {
+    if (user == null) {
+      return 'Anonymous'
+    }
+    if (user.name != null) {
+      return user.name
+    }
+    let name = [user.first_name, user.last_name]
+      .filter(n => n != null)
+      .join(' ')
+      .trim()
+    if (name === '') {
+      name = user.email.split('@')[0]
+    }
+    if (name == null || name === '') {
+      return '?'
+    }
+    return name
   },
 
   deleteLabel(req, res, next) {
@@ -257,12 +340,6 @@ module.exports = HistoryController = {
         error = new Error(
           `history api responded with non-success code: ${response.statusCode}`
         )
-        logger.warn(
-          { err: error },
-          `project-history api responded with non-success code: ${
-            response.statusCode
-          }`
-        )
         return callback(error)
       }
     })
@@ -289,13 +366,18 @@ module.exports = HistoryController = {
         v1_id,
         version,
         `${project.name} (Version ${version})`,
+        req,
         res,
         next
       )
     })
   },
 
-  _pipeHistoryZipToResponse(v1_project_id, version, name, res, next) {
+  _pipeHistoryZipToResponse(v1_project_id, version, name, req, res, next) {
+    if (req.aborted) {
+      // client has disconnected -- skip project history api call and download
+      return
+    }
     // increase timeout to 6 minutes
     res.setTimeout(6 * 60 * 1000)
     const url = `${
@@ -312,8 +394,15 @@ module.exports = HistoryController = {
     }
     return request(options, function(err, response, body) {
       if (err) {
-        logger.warn({ err, v1_project_id, version }, 'history API error')
+        OError.tag(err, 'history API error', {
+          v1_project_id,
+          version
+        })
         return next(err)
+      }
+      if (req.aborted) {
+        // client has disconnected -- skip delayed s3 download
+        return
       }
       let retryAttempt = 0
       let retryDelay = 2000
@@ -322,6 +411,11 @@ module.exports = HistoryController = {
         40,
         callback =>
           setTimeout(function() {
+            if (req.aborted) {
+              // client has disconnected -- skip s3 download
+              return callback() // stop async.retry loop
+            }
+
             // increase delay by 1 second up to 10
             if (retryDelay < 10000) {
               retryDelay += 1000
@@ -331,8 +425,16 @@ module.exports = HistoryController = {
               url: body.zipUrl,
               sendImmediately: true
             })
+            const abortS3Request = () => getReq.abort()
+            req.on('aborted', abortS3Request)
+            res.on('timeout', abortS3Request)
+            function cleanupAbortTrigger() {
+              req.off('aborted', abortS3Request)
+              res.off('timeout', abortS3Request)
+            }
             getReq.on('response', function(response) {
               if (response.statusCode !== 200) {
+                cleanupAbortTrigger()
                 return callback(new Error('invalid response'))
               }
               // pipe also proxies the headers, but we want to customize these ones
@@ -343,23 +445,32 @@ module.exports = HistoryController = {
                 filename: `${name}.zip`
               })
               res.contentType('application/zip')
-              getReq.pipe(res)
-              return callback()
+              pipeline(response, res, err => {
+                if (err) {
+                  logger.warn(
+                    { err, v1_project_id, version, retryAttempt },
+                    'history s3 proxying error'
+                  )
+                }
+              })
+              callback()
             })
             return getReq.on('error', function(err) {
               logger.warn(
                 { err, v1_project_id, version, retryAttempt },
                 'history s3 download error'
               )
+              cleanupAbortTrigger()
               return callback(err)
             })
           }, retryDelay),
         function(err) {
           if (err) {
-            logger.warn(
-              { err, v1_project_id, version, retryAttempt },
-              'history s3 download failed'
-            )
+            OError.tag(err, 'history s3 download failed', {
+              v1_project_id,
+              version,
+              retryAttempt
+            })
             return next(err)
           }
         }

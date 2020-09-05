@@ -6,6 +6,57 @@ const UserGetter = require('../User/UserGetter')
 const UserUpdater = require('../User/UserUpdater')
 const UserSessionsManager = require('../User/UserSessionsManager')
 const logger = require('logger-sharelatex')
+const { expressify } = require('../../util/promises')
+
+async function setNewUserPassword(req, res, next) {
+  let user
+  let { passwordResetToken, password } = req.body
+  if (!passwordResetToken || !password) {
+    return res.sendStatus(400)
+  }
+  passwordResetToken = passwordResetToken.trim()
+  if (AuthenticationManager.validatePassword(password) != null) {
+    return res.sendStatus(400)
+  }
+  delete req.session.resetToken
+
+  const initiatorId = AuthenticationController.getLoggedInUserId(req)
+  // password reset via tokens can be done while logged in, or not
+  const auditLog = {
+    initiatorId,
+    ip: req.ip
+  }
+
+  try {
+    const result = await PasswordResetHandler.promises.setNewUserPassword(
+      passwordResetToken,
+      password,
+      auditLog
+    )
+    let { found, reset, userId } = result
+    if (!found) return res.sendStatus(404)
+    if (!reset) return res.sendStatus(500)
+    await UserSessionsManager.promises.revokeAllUserSessions(
+      { _id: userId },
+      []
+    )
+    await UserUpdater.promises.removeReconfirmFlag(userId)
+    if (!req.session.doLoginAfterPasswordReset) {
+      return res.sendStatus(200)
+    }
+    user = await UserGetter.promises.getUser(userId)
+  } catch (error) {
+    if (error.name === 'NotFoundError') {
+      return res.sendStatus(404)
+    } else if (error.name === 'InvalidPasswordError') {
+      return res.sendStatus(400)
+    } else {
+      return res.sendStatus(500)
+    }
+  }
+
+  AuthenticationController.finishLogin(user, req, res, next)
+}
 
 module.exports = {
   renderRequestResetForm(req, res) {
@@ -22,10 +73,10 @@ module.exports = {
     }
     RateLimiter.addCount(opts, (err, canContinue) => {
       if (err != null) {
-        res.send(500, { message: err.message })
+        res.status(500).send({ message: err.message })
       }
       if (!canContinue) {
-        return res.send(429, {
+        return res.status(429).send({
           message: req.i18n.translate('rate_limit_hit_wait')
         })
       }
@@ -35,17 +86,17 @@ module.exports = {
             { err },
             'failed to generate and email password reset token'
           )
-          res.send(500, { message: err.message })
+          res.status(500).send({ message: err.message })
         } else if (status === 'primary') {
-          res.send(200, {
+          res.status(200).send({
             message: { text: req.i18n.translate('password_reset_email_sent') }
           })
         } else if (status === 'secondary') {
-          res.send(404, {
+          res.status(404).send({
             message: req.i18n.translate('secondary_email_password_reset')
           })
         } else {
-          res.send(404, {
+          res.status(404).send({
             message: req.i18n.translate('cant_find_email')
           })
         }
@@ -67,62 +118,5 @@ module.exports = {
     })
   },
 
-  setNewUserPassword(req, res, next) {
-    let { passwordResetToken, password } = req.body
-    if (!passwordResetToken || !password) {
-      return res.sendStatus(400)
-    }
-    passwordResetToken = passwordResetToken.trim()
-    if (AuthenticationManager.validatePassword(password) != null) {
-      return res.sendStatus(400)
-    }
-    delete req.session.resetToken
-    PasswordResetHandler.setNewUserPassword(
-      passwordResetToken,
-      password,
-      (err, found, userId) => {
-        if ((err && err.name === 'NotFoundError') || !found) {
-          return res.status(404).send('NotFoundError')
-        } else if (err) {
-          return res.status(500)
-        }
-        UserSessionsManager.revokeAllUserSessions({ _id: userId }, [], err => {
-          if (err != null) {
-            return next(err)
-          }
-          UserUpdater.removeReconfirmFlag(userId, err => {
-            if (err != null) {
-              return next(err)
-            }
-            if (!req.body.login_after) {
-              return res.sendStatus(200)
-            }
-            UserGetter.getUser(userId, { email: 1 }, (err, user) => {
-              if (err != null) {
-                return next(err)
-              }
-              AuthenticationController.afterLoginSessionSetup(
-                req,
-                user,
-                err => {
-                  if (err != null) {
-                    logger.err(
-                      { err, email: user.email },
-                      'Error setting up session after setting password'
-                    )
-                    return next(err)
-                  }
-                  res.json({
-                    redir:
-                      AuthenticationController._getRedirectFromSession(req) ||
-                      '/project'
-                  })
-                }
-              )
-            })
-          })
-        })
-      }
-    )
-  }
+  setNewUserPassword: expressify(setNewUserPassword)
 }

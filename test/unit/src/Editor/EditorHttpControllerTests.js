@@ -3,7 +3,6 @@ const sinon = require('sinon')
 const { expect } = require('chai')
 const { ObjectId } = require('mongodb')
 const Errors = require('../../../../app/src/Features/Errors/Errors')
-const HttpErrors = require('@overleaf/o-error/http')
 
 const MODULE_PATH = '../../../../app/src/Features/Editor/EditorHttpController'
 
@@ -24,11 +23,13 @@ describe('EditorHttpController', function() {
         _id: 'owner',
         email: 'owner@example.com',
         other_property: true
-      }
+      },
+      members: [{ one: 1 }, { two: 2 }]
     }
     this.reducedProjectView = {
       _id: this.projectView._id,
-      owner: { _id: this.projectView.owner._id }
+      owner: { _id: this.projectView.owner._id },
+      members: []
     }
     this.doc = { _id: new ObjectId(), name: 'excellent-original-idea.tex' }
     this.file = { _id: new ObjectId() }
@@ -122,6 +123,10 @@ describe('EditorHttpController', function() {
         convertDocToFile: sinon.stub().resolves(this.file)
       }
     }
+    this.HttpErrorHandler = {
+      notFound: sinon.stub(),
+      unprocessableEntity: sinon.stub()
+    }
     this.EditorHttpController = SandboxedModule.require(MODULE_PATH, {
       globals: {
         console: console
@@ -144,8 +149,8 @@ describe('EditorHttpController', function() {
         '../../infrastructure/FileWriter': this.FileWriter,
         '../Project/ProjectEntityUpdateHandler': this
           .ProjectEntityUpdateHandler,
-        '../Errors/Errors': Errors,
-        '@overleaf/o-error/http': HttpErrors
+        '../Errors/HttpErrorHandler': this.HttpErrorHandler,
+        '../Errors/Errors': Errors
       }
     })
   })
@@ -540,14 +545,34 @@ describe('EditorHttpController', function() {
     })
 
     describe('when the doc has ranges', function() {
-      it('should return a 422', function(done) {
+      it('should return a 422 - Unprocessable Entity', function(done) {
         this.ProjectEntityUpdateHandler.promises.convertDocToFile.rejects(
           new Errors.DocHasRangesError({})
         )
-        this.EditorHttpController.convertDocToFile(this.req, this.res, err => {
-          expect(err).to.be.instanceof(HttpErrors.UnprocessableEntityError)
+        this.HttpErrorHandler.unprocessableEntity = sinon.spy(
+          (req, res, message) => {
+            expect(req).to.exist
+            expect(res).to.exist
+            expect(message).to.equal('Document has comments or tracked changes')
+            done()
+          }
+        )
+        this.EditorHttpController.convertDocToFile(this.req, this.res)
+      })
+    })
+
+    describe("when the doc does't exist", function() {
+      it('should return a 404 - not found', function(done) {
+        this.ProjectEntityUpdateHandler.promises.convertDocToFile.rejects(
+          new Errors.NotFoundError({})
+        )
+        this.HttpErrorHandler.notFound = sinon.spy((req, res, message) => {
+          expect(req).to.exist
+          expect(res).to.exist
+          expect(message).to.equal('Document not found')
           done()
         })
+        this.EditorHttpController.convertDocToFile(this.req, this.res)
       })
     })
   })

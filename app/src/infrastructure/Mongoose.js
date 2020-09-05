@@ -13,12 +13,13 @@ if (
   )
 }
 
-mongoose.connect(
+const connectionPromise = mongoose.connect(
   Settings.mongo.url,
   {
     poolSize: POOL_SIZE,
     config: { autoIndex: false },
     useMongoClient: true,
+    socketTimeoutMS: Settings.mongo.socketTimeoutMS,
     appname: 'web'
   }
 )
@@ -51,5 +52,14 @@ if (process.env.MONGOOSE_DEBUG) {
 mongoose.plugin(schema => {
   schema.options.usePushEach = true
 })
+
+mongoose.Promise = global.Promise
+
+async function getNativeDb() {
+  const connection = await connectionPromise
+  return connection.db
+}
+
+mongoose.getNativeDb = getNativeDb
 
 module.exports = mongoose

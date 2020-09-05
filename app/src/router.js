@@ -18,6 +18,7 @@ const UserInfoController = require('./Features/User/UserInfoController')
 const UserController = require('./Features/User/UserController')
 const UserEmailsController = require('./Features/User/UserEmailsController')
 const UserPagesController = require('./Features/User/UserPagesController')
+const UserOnboardingController = require('./Features/User/UserOnboardingController')
 const DocumentController = require('./Features/Documents/DocumentController')
 const CompileManager = require('./Features/Compile/CompileManager')
 const CompileController = require('./Features/Compile/CompileController')
@@ -115,14 +116,8 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
     )
   }
 
-  webRouter.get('/user/activate', UserPagesController.activateAccountPage)
-  AuthenticationController.addEndpointToLoginWhitelist('/user/activate')
-
-  webRouter.get(
-    '/system/messages',
-    AuthenticationController.requireLogin(),
-    SystemMessageController.getMessages
-  )
+  // .getMessages will generate an empty response for anonymous users.
+  webRouter.get('/system/messages', SystemMessageController.getMessages)
 
   webRouter.get(
     '/user/settings',
@@ -249,11 +244,23 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
     UserInfoController.getPersonalInfo
   )
 
+  privateApiRouter.post(
+    '/user/onboarding_emails',
+    AuthenticationController.httpAuth,
+    UserOnboardingController.sendRecentSignupOnboardingEmails
+  )
+
   webRouter.get(
     '/user/reconfirm',
     UserPagesController.renderReconfirmAccountPage
   )
   // for /user/reconfirm POST, see password router
+
+  webRouter.get(
+    '/user/tpds/queues',
+    AuthenticationController.requireLogin(),
+    TpdsController.getQueues
+  )
 
   webRouter.get(
     '/user/projects',
@@ -546,6 +553,11 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
   )
   webRouter.get(
     '/project/:project_id/version/:version/zip',
+    RateLimiterMiddleware.rateLimit({
+      endpointName: 'download-project-revision',
+      maxRequests: 30,
+      timeInterval: 60 * 60
+    }),
     AuthorizationMiddleware.ensureUserCanReadProject,
     HistoryController.downloadZipOfVersion
   )
@@ -804,11 +816,13 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
 
   webRouter.get(
     '/project/:project_id/messages',
+    AuthorizationMiddleware.blockRestrictedUserFromProject,
     AuthorizationMiddleware.ensureUserCanReadProject,
     ChatController.getMessages
   )
   webRouter.post(
     '/project/:project_id/messages',
+    AuthorizationMiddleware.blockRestrictedUserFromProject,
     AuthorizationMiddleware.ensureUserCanReadProject,
     RateLimiterMiddleware.rateLimit({
       endpointName: 'send-chat-message',
@@ -982,8 +996,16 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
   // used by kubernetes health-check and acceptance tests
   webRouter.get('/dev/csrf', (req, res) => res.send(res.locals.csrfToken))
 
-  publicApiRouter.get('/health_check', HealthCheckController.check)
-  privateApiRouter.get('/health_check', HealthCheckController.checkApi)
+  publicApiRouter.get(
+    '/health_check',
+    HealthCheckController.checkActiveHandles,
+    HealthCheckController.check
+  )
+  privateApiRouter.get(
+    '/health_check',
+    HealthCheckController.checkActiveHandles,
+    HealthCheckController.checkApi
+  )
 
   publicApiRouter.get('/health_check/redis', HealthCheckController.checkRedis)
   privateApiRouter.get('/health_check/redis', HealthCheckController.checkRedis)
@@ -993,6 +1015,11 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
 
   webRouter.get(
     '/status/compiler/:Project_id',
+    RateLimiterMiddleware.rateLimit({
+      endpointName: 'status-compiler',
+      maxRequests: 10,
+      timeInterval: 60
+    }),
     AuthorizationMiddleware.ensureUserCanReadProject,
     function(req, res) {
       const projectId = req.params.Project_id
@@ -1046,7 +1073,7 @@ function initialize(webRouter, privateApiRouter, publicApiRouter) {
 
   privateApiRouter.get('/opps-small', function(req, res, next) {
     logger.err('test error occured')
-    res.send()
+    res.sendStatus(200)
   })
 
   webRouter.post('/error/client', function(req, res, next) {

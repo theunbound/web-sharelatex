@@ -1,5 +1,5 @@
 const OError = require('@overleaf/o-error')
-const HttpErrors = require('@overleaf/o-error/http')
+const HttpErrorHandler = require('../../Features/Errors/HttpErrorHandler')
 const { ObjectId } = require('mongodb')
 const CollaboratorsHandler = require('./CollaboratorsHandler')
 const CollaboratorsGetter = require('./CollaboratorsGetter')
@@ -43,10 +43,7 @@ async function getAllMembers(req, res, next) {
   try {
     members = await CollaboratorsGetter.promises.getAllInvitedMembers(projectId)
   } catch (err) {
-    throw new OError({
-      message: 'error getting members for project',
-      info: { projectId }
-    }).withCause(err)
+    throw OError.tag(err, 'error getting members for project', { projectId })
   }
   res.json({ members })
 }
@@ -69,9 +66,9 @@ async function setCollaboratorInfo(req, res, next) {
     res.sendStatus(204)
   } catch (err) {
     if (err instanceof Errors.NotFoundError) {
-      throw new HttpErrors.NotFoundError({})
+      HttpErrorHandler.notFound(req, res)
     } else {
-      throw new HttpErrors.InternalServerError({}).withCause(err)
+      next(err)
     }
   }
 }
@@ -92,23 +89,17 @@ async function transferOwnership(req, res, next) {
     res.sendStatus(204)
   } catch (err) {
     if (err instanceof Errors.ProjectNotFoundError) {
-      throw new HttpErrors.NotFoundError({
-        info: { public: { message: `project not found: ${projectId}` } }
-      })
+      HttpErrorHandler.notFound(req, res, `project not found: ${projectId}`)
     } else if (err instanceof Errors.UserNotFoundError) {
-      throw new HttpErrors.NotFoundError({
-        info: { public: { message: `user not found: ${toUserId}` } }
-      })
+      HttpErrorHandler.notFound(req, res, `user not found: ${toUserId}`)
     } else if (err instanceof Errors.UserNotCollaboratorError) {
-      throw new HttpErrors.ForbiddenError({
-        info: {
-          public: {
-            message: `user ${toUserId} should be a collaborator in project ${projectId} prior to ownership transfer`
-          }
-        }
-      })
+      HttpErrorHandler.forbidden(
+        req,
+        res,
+        `user ${toUserId} should be a collaborator in project ${projectId} prior to ownership transfer`
+      )
     } else {
-      throw new HttpErrors.InternalServerError({}).withCause(err)
+      next(err)
     }
   }
 }

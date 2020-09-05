@@ -27,19 +27,15 @@
   overflow-y: auto;
   // Specificity needed to override default `body > .content` values
   body > .content& {
-    min-height: calc(~'100vh -' (@header-height + @footer-height));
+    min-height: calc(~'100vh -' (@header-height - @footer-height));
     padding-top: 0;
   }
 }
 
-.project-list-content when (@is-overleaf) {
+.project-list-content {
   margin: 0;
   height: 100%;
   overflow: hidden;
-}
-
-.project-list-content when (@is-overleaf = false) {
-  .container;
 }
 
 .project-list-empty {
@@ -56,31 +52,28 @@
   }
 }
 
-.sidebar-new-proj-btn when (@is-overleaf) {
+.sidebar-new-proj-btn {
   .btn-block;
 }
 
-.project-list-row when (@is-overleaf) {
+.project-list-row {
   height: 100%;
-  min-height: calc(~'100vh -' (@header-height + @footer-height));
+  min-height: calc(~'100vh -' (@header-height - @footer-height));
 }
-.project-list-container when (@is-overleaf) {
+.project-list-container {
   height: 100%;
 }
 .project-list-sidebar {
   background-color: @sidebar-bg;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -ms-overflow-style: -ms-autohiding-scrollbar;
   padding-top: @content-margin-vertical;
   padding-bottom: @content-margin-vertical;
   color: @sidebar-color;
   .small {
     color: @sidebar-color;
   }
-}
-
-.project-list-sidebar when (@is-overleaf) {
-  overflow-x: hidden;
-  overflow-y: auto;
-  -ms-overflow-style: -ms-autohiding-scrollbar;
 }
 
 .project-list-main {
@@ -177,10 +170,6 @@ input.project-list-table-select-item[type='checkbox'] {
   position: absolute;
   left: @line-height-computed - (@grid-gutter-width / 2);
   margin-top: 5px;
-}
-
-.project-list-table-v1-badge-container {
-  position: absolute;
 }
 
 .project-list-table-name {
@@ -330,9 +319,7 @@ ul.folders-menu {
         text-decoration: none;
       }
     }
-    > a when (@is-overleaf = false) {
-      font-size: 0.9rem;
-    }
+
     &.separator {
       padding: @folders-menu-item-v-padding @folders-menu-item-h-padding;
       cursor: auto;
@@ -360,8 +347,7 @@ ul.folders-menu {
   }
   > li.folders-menu-item-with-tooltip {
     > a {
-      padding-right: 1.5 * @folders-menu-item-h-padding +
-        @folders-menu-tooltip-size;
+      padding-right: 1.5 * @folders-menu-item-h-padding + @info-badge-size;
     }
   }
   > li > a.small {
@@ -449,15 +435,15 @@ ul.folders-menu {
   position: absolute;
   top: 50%;
   right: @folders-menu-item-h-padding;
-  width: @folders-menu-tooltip-size;
-  height: @folders-menu-tooltip-size;
-  margin-top: -(floor(@folders-menu-tooltip-size / 2));
-  line-height: @folders-menu-tooltip-size;
-  background-color: @folders-menu-tooltip-bg;
+  width: @info-badge-size;
+  height: @info-badge-size;
+  margin-top: -(floor(@info-badge-size / 2));
+  line-height: @info-badge-size;
+  background-color: @info-badge-bg;
   font-family: @font-family-serif;
   color: #fff;
   font-style: italic;
-  border-radius: ceil(@folders-menu-tooltip-size / 2);
+  border-radius: ceil(@info-badge-size / 2);
   text-align: center;
   font-weight: 700;
   @media (min-width: @screen-sm-min) {
@@ -506,12 +492,8 @@ ul.structured-list {
     a {
       color: @structured-list-link-color;
     }
-    .header when (@is-overleaf = true) {
+    .header {
       font-weight: 600;
-    }
-
-    .header when (@is-overleaf = false) {
-      text-transform: uppercase;
     }
 
     .select-item,
@@ -531,36 +513,14 @@ ul.structured-list {
   }
 }
 
-.project-list-card when (@is-overleaf) {
+.project-list-card {
   padding: 0 (@line-height-computed / 4);
 }
 
 ul.project-list {
   li {
-    .last-modified when (@is-overleaf = false) {
-      font-size: 0.8rem;
-    }
-    .owner when (@is-overleaf = false) {
-      font-size: 0.8rem;
-    }
-    .owner when (@is-overleaf = false) {
-      margin-right: 0;
-    }
     .projectName {
       margin-right: @line-height-computed / 4;
-      padding: 0;
-      vertical-align: inherit;
-      white-space: normal;
-      text-align: left;
-    }
-
-    .v1-badge {
-      margin-left: -4px;
-    }
-
-    .action-btn {
-      padding: 0 0.3em;
-      margin-left: 0.2em;
     }
   }
   i.tablesort {

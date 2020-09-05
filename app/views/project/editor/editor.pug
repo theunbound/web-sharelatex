@@ -32,12 +32,15 @@ div.full-size(
 		)
 			span(ng-show="editor.open_doc_id")
 				i.fa.fa-spin.fa-refresh
-				| &nbsp;&nbsp;#{translate("loading")}...
+				| &nbsp;&nbsp;#{translate("loading")}…
 			span(ng-show="!editor.open_doc_id")
 				i.fa.fa-arrow-left
 				| &nbsp;&nbsp;#{translate("open_a_file_on_the_left")}
 
-		!= moduleIncludes('editor:main', locals)
+		if moduleIncludesAvailable('editor:main')
+			!= moduleIncludes('editor:main', locals)
+		else
+			.toolbar.toolbar-editor
 
 		.multi-selection-ongoing(
 			ng-show="multiSelectedCount > 0"
@@ -97,15 +100,19 @@ div.full-size(
 			tooltip-placement="right"
 			tooltip-append-to-body="true"
 			ng-click="syncToPdf()"
+			ng-disabled="syncToPdfInFlight"
 		)
-			i.synctex-control-icon
+			i.synctex-control-icon(ng-show="!syncToPdfInFlight")
+			i.synctex-spin-icon.fa.fa-refresh.fa-spin(ng-show="syncToPdfInFlight")
 		a.btn.btn-default.btn-xs.synctex-control.synctex-control-goto-code(
 			tooltip-html="'"+translate('go_to_pdf_location_in_code', {}, true)+"'"
 			tooltip-placement="right"
 			tooltip-append-to-body="true"
 			ng-click="syncToCode()"
+			ng-disabled="syncToCodeInFlight"
 		)
-			i.synctex-control-icon
+			i.synctex-control-icon(ng-show="!syncToCodeInFlight")
+			i.synctex-spin-icon.fa.fa-refresh.fa-spin(ng-show="syncToCodeInFlight")
 
 div.full-size(
 	ng-if="ui.pdfLayout == 'flat'"

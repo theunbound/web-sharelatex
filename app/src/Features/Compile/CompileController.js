@@ -14,6 +14,7 @@
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
 let CompileController
+const OError = require('@overleaf/o-error')
 const Metrics = require('metrics-sharelatex')
 const ProjectGetter = require('../Project/ProjectGetter')
 const CompileManager = require('./CompileManager')
@@ -77,8 +78,10 @@ module.exports = CompileController = {
         validationProblems
       ) => {
         if (error) {
+          Metrics.inc('compile-error')
           return next(error)
         }
+        Metrics.inc('compile-status', 1, { status: status })
         res.json({
           status,
           outputFiles,
@@ -214,13 +217,13 @@ module.exports = CompileController = {
       return rateLimit(function(err, canContinue) {
         if (err != null) {
           logger.err({ err }, 'error checking rate limit for pdf download')
-          return res.send(500)
+          return res.sendStatus(500)
         } else if (!canContinue) {
           logger.log(
             { project_id, ip: req.ip },
             'rate limit hit downloading pdf'
           )
-          return res.send(500)
+          return res.sendStatus(500)
         } else {
           return CompileController._downloadAsUser(req, function(
             error,
@@ -465,7 +468,7 @@ module.exports = CompileController = {
     return ClsiCookieManager.getCookieJar(project_id, function(err, jar) {
       let qs
       if (err != null) {
-        logger.warn({ err }, 'error getting cookie jar for clsi request')
+        OError.tag(err, 'error getting cookie jar for clsi request')
         return callback(err)
       }
       // expand any url parameter passed in as {url:..., qs:...}

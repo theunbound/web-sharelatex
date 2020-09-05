@@ -9,8 +9,7 @@ describe('SAMLIdentityManager', function() {
     this.Errors = {
       EmailExistsError: sinon.stub(),
       NotFoundError: sinon.stub(),
-      SAMLIdentityExistsError: sinon.stub(),
-      SAMLUserNotFoundError: sinon.stub()
+      SAMLIdentityExistsError: sinon.stub()
     }
     this.user = {
       _id: 'user-id-1',
@@ -49,9 +48,23 @@ describe('SAMLIdentityManager', function() {
           sendEmail: sinon.stub().yields()
         }),
         '../Errors/Errors': this.Errors,
+        '../Notifications/NotificationsBuilder': (this.NotificationsBuilder = {
+          promises: {
+            redundantPersonalSubscription: sinon
+              .stub()
+              .returns({ create: sinon.stub().resolves() })
+          }
+        }),
+        '../Subscription/SubscriptionLocator': (this.SubscriptionLocator = {
+          promises: {
+            getUserIndividualSubscription: sinon.stub().resolves()
+          }
+        }),
         '../../models/User': {
           User: (this.User = {
-            findOneAndUpdate: sinon.stub(),
+            findOneAndUpdate: sinon.stub().returns({
+              exec: sinon.stub().resolves()
+            }),
             findOne: sinon.stub().returns({
               exec: sinon.stub().resolves()
             }),
@@ -68,7 +81,12 @@ describe('SAMLIdentityManager', function() {
           }
         }),
         '../User/UserUpdater': (this.UserUpdater = {
-          addEmailAddress: sinon.stub()
+          addEmailAddress: sinon.stub(),
+          promises: {
+            addEmailAddress: sinon.stub().resolves(),
+            confirmEmail: sinon.stub().resolves(),
+            updateUser: sinon.stub().resolves()
+          }
         }),
         '../Institutions/InstitutionsAPI': this.InstitutionsAPI,
         'logger-sharelatex': this.logger
@@ -152,10 +170,25 @@ describe('SAMLIdentityManager', function() {
         }
       })
     })
+
+    describe('after linking', function() {
+      it('should send an email notification', function() {
+        this.SAMLIdentityManager.linkAccounts(
+          this.user._id,
+          this.user.email,
+          '1',
+          'Overleaf University',
+          () => {
+            expect(this.User.update).to.have.been.called
+            expect(this.EmailHandler.sendEmail).to.have.been.called
+          }
+        )
+      })
+    })
   })
 
   describe('unlinkAccounts', function() {
-    it('should send an email notification email', function() {
+    it('should send an email notification', function() {
       this.SAMLIdentityManager.unlinkAccounts(
         this.user._id,
         this.user.email,
@@ -210,6 +243,49 @@ describe('SAMLIdentityManager', function() {
         ['foo', 'bar'],
         'bam'
       ).should.equal(false)
+    })
+  })
+
+  describe('redundantSubscription', function() {
+    const userId = '1bv'
+    const providerId = 123
+    const providerName = 'University Name'
+    describe('with a personal subscription', function() {
+      beforeEach(function() {
+        this.SubscriptionLocator.promises.getUserIndividualSubscription.resolves(
+          {
+            planCode: 'professional'
+          }
+        )
+      })
+      it('should create redundant personal subscription notification ', async function() {
+        try {
+          await this.SAMLIdentityManager.redundantSubscription(
+            userId,
+            providerId,
+            providerName
+          )
+        } catch (error) {
+          expect(error).to.not.exist
+        }
+        expect(this.NotificationsBuilder.promises.redundantPersonalSubscription)
+          .to.have.been.calledOnce
+      })
+    })
+    describe('without a personal subscription', function() {
+      it('should create redundant personal subscription notification ', async function() {
+        try {
+          await this.SAMLIdentityManager.redundantSubscription(
+            userId,
+            providerId,
+            providerName
+          )
+        } catch (error) {
+          expect(error).to.not.exist
+        }
+        expect(this.NotificationsBuilder.promises.redundantPersonalSubscription)
+          .to.not.have.been.called
+      })
     })
   })
 })

@@ -5,7 +5,6 @@ const modulePath = '../../../../app/src/Features/User/UserController.js'
 const SandboxedModule = require('sandboxed-module')
 const OError = require('@overleaf/o-error')
 const Errors = require('../../../../app/src/Features/Errors/Errors')
-const HttpErrors = require('@overleaf/o-error/http')
 
 describe('UserController', function() {
   beforeEach(function() {
@@ -13,6 +12,7 @@ describe('UserController', function() {
 
     this.user = {
       _id: this.user_id,
+      email: 'email@overleaf.com',
       save: sinon.stub().callsArgWith(0),
       ace: {}
     }
@@ -31,6 +31,7 @@ describe('UserController', function() {
       i18n: {
         translate: text => text
       },
+      ip: '0:0:0:0',
       query: {}
     }
 
@@ -50,8 +51,11 @@ describe('UserController', function() {
     }
     this.AuthenticationManager = {
       authenticate: sinon.stub(),
-      setUserPassword: sinon.stub(),
-      validatePassword: sinon.stub()
+      validatePassword: sinon.stub(),
+      promises: {
+        authenticate: sinon.stub(),
+        setUserPassword: sinon.stub()
+      }
     }
     this.ReferalAllocator = { allocate: sinon.stub() }
     this.SubscriptionDomainHandler = { autoAllocate: sinon.stub() }
@@ -67,9 +71,19 @@ describe('UserController', function() {
     this.UserSessionsManager = {
       trackSession: sinon.stub(),
       untrackSession: sinon.stub(),
-      revokeAllUserSessions: sinon.stub().callsArgWith(2, null)
+      revokeAllUserSessions: sinon.stub().callsArgWith(2, null),
+      promises: {
+        getAllUserSessions: sinon.stub().resolves(),
+        revokeAllUserSessions: sinon.stub().resolves()
+      }
     }
     this.SudoModeHandler = { clearSudoMode: sinon.stub() }
+    this.HttpErrorHandler = {
+      badRequest: sinon.stub(),
+      conflict: sinon.stub(),
+      unprocessableEntity: sinon.stub(),
+      legacyInternal: sinon.stub()
+    }
     this.UserController = SandboxedModule.require(modulePath, {
       globals: {
         console: console
@@ -92,23 +106,31 @@ describe('UserController', function() {
         '../Referal/ReferalAllocator': this.ReferalAllocator,
         '../Subscription/SubscriptionDomainHandler': this
           .SubscriptionDomainHandler,
+        './UserAuditLogHandler': (this.UserAuditLogHandler = {
+          promises: {
+            addEntry: sinon.stub().resolves()
+          }
+        }),
         './UserHandler': this.UserHandler,
         './UserSessionsManager': this.UserSessionsManager,
         '../SudoMode/SudoModeHandler': this.SudoModeHandler,
+        '../Errors/HttpErrorHandler': this.HttpErrorHandler,
         'settings-sharelatex': this.settings,
-        'logger-sharelatex': {
+        'logger-sharelatex': (this.logger = {
           log() {},
           warn() {},
           err() {},
-          error() {}
-        },
+          error: sinon.stub()
+        }),
         'metrics-sharelatex': {
           inc() {}
         },
         '../Errors/Errors': Errors,
         '@overleaf/o-error': OError,
-        '@overleaf/o-error/http': HttpErrors,
-        '../Email/EmailHandler': { sendEmail: sinon.stub() }
+        '../Email/EmailHandler': (this.EmailHandler = {
+          sendEmail: sinon.stub(),
+          promises: { sendEmail: sinon.stub().resolves() }
+        })
       }
     })
 
@@ -233,17 +255,19 @@ describe('UserController', function() {
           .yields(new Errors.SubscriptionAdminDeletionError())
       })
 
-      it('should return a json error', function(done) {
-        this.UserController.tryDeleteUser(this.req, null, error => {
-          expect(error).to.be.instanceof(HttpErrors.UnprocessableEntityError)
-          expect(
-            OError.hasCauseInstanceOf(
-              error,
-              Errors.SubscriptionAdminDeletionError
-            )
-          ).to.be.true
-          done()
-        })
+      it('should return a HTTP Unprocessable Entity error', function(done) {
+        this.HttpErrorHandler.unprocessableEntity = sinon.spy(
+          (req, res, message, info) => {
+            expect(req).to.exist
+            expect(res).to.exist
+            expect(message).to.equal('error while deleting user account')
+            expect(info).to.deep.equal({
+              error: 'SubscriptionAdminDeletionError'
+            })
+            done()
+          }
+        )
+        this.UserController.tryDeleteUser(this.req, this.res)
       })
     })
 
@@ -267,7 +291,7 @@ describe('UserController', function() {
 
   describe('unsubscribe', function() {
     it('should send the user to unsubscribe', function(done) {
-      this.res.send = code => {
+      this.res.sendStatus = () => {
         this.NewsLetterManager.unsubscribe
           .calledWith(this.user)
           .should.equal(true)
@@ -279,6 +303,7 @@ describe('UserController', function() {
 
   describe('updateUserSettings', function() {
     beforeEach(function() {
+      this.auditLog = { initiatorId: this.user_id, ipAddress: this.req.ip }
       this.newEmail = 'hello@world.com'
       this.req.externalAuthenticationSystemUsed = sinon.stub().returns(false)
     })
@@ -357,11 +382,11 @@ describe('UserController', function() {
 
     it('should call the user updater with the new email and user _id', function(done) {
       this.req.body.email = this.newEmail.toUpperCase()
-      this.UserUpdater.changeEmailAddress.callsArgWith(2)
+      this.UserUpdater.changeEmailAddress.callsArgWith(3)
       this.res.sendStatus = code => {
         code.should.equal(200)
         this.UserUpdater.changeEmailAddress
-          .calledWith(this.user_id, this.newEmail)
+          .calledWith(this.user_id, this.newEmail, this.auditLog)
           .should.equal(true)
         done()
       }
@@ -370,7 +395,7 @@ describe('UserController', function() {
 
     it('should update the email on the session', function(done) {
       this.req.body.email = this.newEmail.toUpperCase()
-      this.UserUpdater.changeEmailAddress.callsArgWith(2)
+      this.UserUpdater.changeEmailAddress.callsArgWith(3)
       let callcount = 0
       this.User.findById = (id, cb) => {
         if (++callcount === 2) {
@@ -394,7 +419,7 @@ describe('UserController', function() {
 
     it('should call populateTeamInvites', function(done) {
       this.req.body.email = this.newEmail.toUpperCase()
-      this.UserUpdater.changeEmailAddress.callsArgWith(2)
+      this.UserUpdater.changeEmailAddress.callsArgWith(3)
       this.res.sendStatus = code => {
         code.should.equal(200)
         this.UserHandler.populateTeamInvites
@@ -403,6 +428,38 @@ describe('UserController', function() {
         done()
       }
       this.UserController.updateUserSettings(this.req, this.res)
+    })
+
+    describe('when changeEmailAddress yields an error', function() {
+      it('should pass on an error and not send a success status', function(done) {
+        this.req.body.email = this.newEmail.toUpperCase()
+        this.UserUpdater.changeEmailAddress.callsArgWith(3, new OError())
+        this.HttpErrorHandler.legacyInternal = sinon.spy(
+          (req, res, message, error) => {
+            expect(req).to.exist
+            expect(req).to.exist
+            message.should.equal('problem_changing_email_address')
+            expect(error).to.be.instanceof(OError)
+            done()
+          }
+        )
+        this.UserController.updateUserSettings(this.req, this.res, this.next)
+      })
+
+      it('should call the HTTP conflict error handler when the email already exists', function(done) {
+        this.HttpErrorHandler.conflict = sinon.spy((req, res, message) => {
+          expect(req).to.exist
+          expect(req).to.exist
+          message.should.equal('email_already_registered')
+          done()
+        })
+        this.req.body.email = this.newEmail.toUpperCase()
+        this.UserUpdater.changeEmailAddress.callsArgWith(
+          3,
+          new Errors.EmailExistsError()
+        )
+        this.UserController.updateUserSettings(this.req, this.res)
+      })
     })
 
     describe('when using an external auth source', function() {
@@ -516,90 +573,243 @@ describe('UserController', function() {
   })
 
   describe('clearSessions', function() {
-    it('should call revokeAllUserSessions', function(done) {
-      this.UserController.clearSessions(this.req, this.res)
-      this.UserSessionsManager.revokeAllUserSessions.callCount.should.equal(1)
-      done()
-    })
-
-    it('send a 201 response', function(done) {
-      this.res.sendStatus = status => {
-        status.should.equal(201)
-        done()
-      }
-      this.UserController.clearSessions(this.req, this.res)
-    })
-
-    describe('when revokeAllUserSessions produces an error', function() {
-      it('should call next with an error', function(done) {
-        this.UserSessionsManager.revokeAllUserSessions.callsArgWith(
-          2,
-          new Error('woops')
-        )
-        const next = err => {
-          expect(err).to.not.equal(null)
-          expect(err).to.be.instanceof(Error)
+    describe('success', function() {
+      it('should call revokeAllUserSessions', function(done) {
+        this.res.sendStatus.callsFake(() => {
+          this.UserSessionsManager.promises.revokeAllUserSessions.callCount.should.equal(
+            1
+          )
           done()
-        }
-        this.UserController.clearSessions(this.req, this.res, next)
+        })
+        this.UserController.clearSessions(this.req, this.res)
+      })
+
+      it('send a 201 response', function(done) {
+        this.res.sendStatus.callsFake(status => {
+          status.should.equal(201)
+          done()
+        })
+
+        this.UserController.clearSessions(this.req, this.res)
+      })
+
+      it('sends a security alert email', function(done) {
+        this.res.sendStatus.callsFake(status => {
+          this.EmailHandler.promises.sendEmail.callCount.should.equal(1)
+          done()
+        })
+
+        this.UserController.clearSessions(this.req, this.res)
+      })
+    })
+
+    describe('errors', function() {
+      describe('when getAllUserSessions produces an error', function() {
+        it('should return an error', function(done) {
+          this.UserSessionsManager.promises.getAllUserSessions.rejects(
+            new Error('woops')
+          )
+          this.UserController.clearSessions(this.req, this.res, error => {
+            expect(error).to.be.instanceof(Error)
+            done()
+          })
+        })
+      })
+
+      describe('when audit log addEntry produces an error', function() {
+        it('should call next with an error', function(done) {
+          this.UserAuditLogHandler.promises.addEntry.rejects(new Error('woops'))
+          this.UserController.clearSessions(this.req, this.res, error => {
+            expect(error).to.be.instanceof(Error)
+            done()
+          })
+        })
+      })
+
+      describe('when revokeAllUserSessions produces an error', function() {
+        it('should call next with an error', function(done) {
+          this.UserSessionsManager.promises.revokeAllUserSessions.rejects(
+            new Error('woops')
+          )
+          this.UserController.clearSessions(this.req, this.res, error => {
+            expect(error).to.be.instanceof(Error)
+            done()
+          })
+        })
+      })
+
+      describe('when EmailHandler produces an error', function() {
+        it('send a 201 response but log error', function(done) {
+          this.EmailHandler.promises.sendEmail.rejects(new Error('oops'))
+          this.res.sendStatus.callsFake(status => {
+            status.should.equal(201)
+            this.logger.error.callCount.should.equal(1)
+            done()
+          })
+          this.UserController.clearSessions(this.req, this.res)
+        })
       })
     })
   })
 
   describe('changePassword', function() {
-    it('should check the old password is the current one at the moment', function() {
-      this.AuthenticationManager.authenticate.yields()
-      this.req.body = { currentPassword: 'oldpasshere' }
-      this.UserController.changePassword(this.req, this.res, this.callback)
-      this.AuthenticationManager.authenticate.should.have.been.calledWith(
-        { _id: this.user._id },
-        'oldpasshere'
-      )
-      this.AuthenticationManager.setUserPassword.callCount.should.equal(0)
-    })
-
-    it('it should not set the new password if they do not match', function() {
-      this.AuthenticationManager.authenticate.yields(null, {})
-      this.req.body = {
-        newPassword1: '1',
-        newPassword2: '2'
-      }
-      this.UserController.changePassword(this.req, this.res, this.callback)
-      this.res.status.should.have.been.calledWith(400)
-      this.AuthenticationManager.setUserPassword.callCount.should.equal(0)
-    })
-
-    it('should set the new password if they do match', function() {
-      this.AuthenticationManager.authenticate.yields(null, this.user)
-      this.AuthenticationManager.setUserPassword.yields()
-      this.req.body = {
-        newPassword1: 'newpass',
-        newPassword2: 'newpass'
-      }
-      this.UserController.changePassword(this.req, this.res, this.callback)
-      this.AuthenticationManager.setUserPassword.should.have.been.calledWith(
-        this.user._id,
-        'newpass'
-      )
-    })
-
-    it('it should not set the new password if it is invalid', function() {
-      this.AuthenticationManager.validatePassword = sinon
-        .stub()
-        .returns({ message: 'validation-error' })
-      this.AuthenticationManager.authenticate.yields(null, {})
-      this.req.body = {
-        newPassword1: 'newpass',
-        newPassword2: 'newpass'
-      }
-      this.UserController.changePassword(this.req, this.res, this.callback)
-      this.AuthenticationManager.setUserPassword.callCount.should.equal(0)
-      this.res.status.should.have.been.calledWith(400)
-      this.res.json.should.have.been.calledWith({
-        message: {
-          type: 'error',
-          text: 'validation-error'
+    describe('success', function() {
+      beforeEach(function() {
+        this.AuthenticationManager.promises.authenticate.resolves(this.user)
+        this.AuthenticationManager.promises.setUserPassword.resolves()
+        this.req.body = {
+          newPassword1: 'newpass',
+          newPassword2: 'newpass'
         }
+      })
+      it('should set the new password if they do match', function(done) {
+        this.res.json.callsFake(() => {
+          this.AuthenticationManager.promises.setUserPassword.should.have.been.calledWith(
+            this.user._id,
+            'newpass'
+          )
+          done()
+        })
+        this.UserController.changePassword(this.req, this.res)
+      })
+
+      it('should log the update', function(done) {
+        this.res.json.callsFake(() => {
+          this.UserAuditLogHandler.promises.addEntry.should.have.been.calledWith(
+            this.user._id,
+            'update-password',
+            this.user._id,
+            this.req.ip
+          )
+          this.AuthenticationManager.promises.setUserPassword.callCount.should.equal(
+            1
+          )
+          done()
+        })
+        this.UserController.changePassword(this.req, this.res)
+      })
+
+      it('should send security alert email', function(done) {
+        this.res.json.callsFake(() => {
+          const expectedArg = {
+            to: this.user.email,
+            actionDescribed: `your password has been changed on your account ${
+              this.user.email
+            }`,
+            action: 'password changed'
+          }
+          const emailCall = this.EmailHandler.sendEmail.lastCall
+          expect(emailCall.args[0]).to.equal('securityAlert')
+          expect(emailCall.args[1]).to.deep.equal(expectedArg)
+          done()
+        })
+        this.UserController.changePassword(this.req, this.res)
+      })
+    })
+
+    describe('errors', function() {
+      it('should check the old password is the current one at the moment', function(done) {
+        this.AuthenticationManager.promises.authenticate.resolves()
+        this.req.body = { currentPassword: 'oldpasshere' }
+        this.HttpErrorHandler.badRequest.callsFake(() => {
+          expect(this.HttpErrorHandler.badRequest).to.have.been.calledWith(
+            this.req,
+            this.res,
+            'Your old password is wrong'
+          )
+          this.AuthenticationManager.promises.authenticate.should.have.been.calledWith(
+            { _id: this.user._id },
+            'oldpasshere'
+          )
+          this.AuthenticationManager.promises.setUserPassword.callCount.should.equal(
+            0
+          )
+          done()
+        })
+        this.UserController.changePassword(this.req, this.res)
+      })
+
+      it('it should not set the new password if they do not match', function(done) {
+        this.AuthenticationManager.promises.authenticate.resolves({})
+        this.req.body = {
+          newPassword1: '1',
+          newPassword2: '2'
+        }
+        this.HttpErrorHandler.badRequest.callsFake(() => {
+          expect(this.HttpErrorHandler.badRequest).to.have.been.calledWith(
+            this.req,
+            this.res,
+            'password_change_passwords_do_not_match'
+          )
+          this.AuthenticationManager.promises.setUserPassword.callCount.should.equal(
+            0
+          )
+          done()
+        })
+        this.UserController.changePassword(this.req, this.res)
+      })
+
+      it('it should not set the new password if it is invalid', function(done) {
+        this.AuthenticationManager.validatePassword = sinon
+          .stub()
+          .returns({ message: 'validation-error' })
+        this.AuthenticationManager.promises.authenticate.resolves({})
+        this.req.body = {
+          newPassword1: 'newpass',
+          newPassword2: 'newpass'
+        }
+        this.HttpErrorHandler.badRequest.callsFake(() => {
+          expect(this.HttpErrorHandler.badRequest).to.have.been.calledWith(
+            this.req,
+            this.res,
+            'validation-error'
+          )
+          this.AuthenticationManager.promises.setUserPassword.callCount.should.equal(
+            0
+          )
+          done()
+        })
+        this.UserController.changePassword(this.req, this.res)
+      })
+
+      describe('UserAuditLogHandler error', function() {
+        it('should return error and not update password', function(done) {
+          this.UserAuditLogHandler.promises.addEntry.rejects(new Error('oops'))
+          this.AuthenticationManager.promises.authenticate.resolves(this.user)
+          this.AuthenticationManager.promises.setUserPassword.resolves()
+          this.req.body = {
+            newPassword1: 'newpass',
+            newPassword2: 'newpass'
+          }
+
+          this.UserController.changePassword(this.req, this.res, error => {
+            expect(error).to.be.instanceof(Error)
+            this.AuthenticationManager.promises.setUserPassword.callCount.should.equal(
+              0
+            )
+            done()
+          })
+        })
+      })
+
+      describe('EmailHandler error', function() {
+        beforeEach(function() {
+          this.AuthenticationManager.promises.authenticate.resolves(this.user)
+          this.AuthenticationManager.promises.setUserPassword.resolves()
+          this.req.body = {
+            newPassword1: 'newpass',
+            newPassword2: 'newpass'
+          }
+          this.EmailHandler.sendEmail.yields(new Error('oops'))
+        })
+        it('should not return error but should log it', function(done) {
+          this.res.json.callsFake(result => {
+            expect(result.message.type).to.equal('success')
+            this.logger.error.callCount.should.equal(1)
+            done()
+          })
+          this.UserController.changePassword(this.req, this.res)
+        })
       })
     })
   })

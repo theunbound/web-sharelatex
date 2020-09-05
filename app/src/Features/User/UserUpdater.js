@@ -1,10 +1,11 @@
 const logger = require('logger-sharelatex')
+const OError = require('@overleaf/o-error')
 const mongojs = require('../../infrastructure/mongojs')
 const metrics = require('metrics-sharelatex')
 const { db } = mongojs
 const async = require('async')
 const { ObjectId } = mongojs
-const { promisify } = require('util')
+const { callbackify, promisify } = require('util')
 const UserGetter = require('./UserGetter')
 const {
   addAffiliation,
@@ -12,29 +13,126 @@ const {
 } = require('../Institutions/InstitutionsAPI')
 const Features = require('../../infrastructure/Features')
 const FeaturesUpdater = require('../Subscription/FeaturesUpdater')
+const EmailHandler = require('../Email/EmailHandler')
 const EmailHelper = require('../Helpers/EmailHelper')
 const Errors = require('../Errors/Errors')
 const NewsletterManager = require('../Newsletter/NewsletterManager')
 const RecurlyWrapper = require('../Subscription/RecurlyWrapper')
+const UserAuditLogHandler = require('./UserAuditLogHandler')
+
+async function setDefaultEmailAddress(
+  userId,
+  email,
+  allowUnconfirmed,
+  auditLog,
+  sendSecurityAlert
+) {
+  email = EmailHelper.parseEmail(email)
+  if (email == null) {
+    throw new Error('invalid email')
+  }
+
+  const user = await UserGetter.promises.getUser(userId, {
+    email: 1,
+    emails: 1
+  })
+  if (!user) {
+    throw new Error('invalid userId')
+  }
+
+  const oldEmail = user.email
+  const userEmail = user.emails.find(e => e.email === email)
+  if (!userEmail) {
+    throw new Error('Default email does not belong to user')
+  }
+  if (!userEmail.confirmedAt && !allowUnconfirmed) {
+    throw new Errors.UnconfirmedEmailError()
+  }
+
+  await UserAuditLogHandler.promises.addEntry(
+    userId,
+    'change-primary-email',
+    auditLog.initiatorId,
+    auditLog.ipAddress,
+    {
+      newPrimaryEmail: email,
+      oldPrimaryEmail: oldEmail
+    }
+  )
+
+  const query = { _id: userId, 'emails.email': email }
+  const update = { $set: { email } }
+  const res = await UserUpdater.promises.updateUser(query, update)
+
+  // this should not happen
+  if (res.n === 0) {
+    throw new Error('email update error')
+  }
+
+  if (sendSecurityAlert) {
+    // send email to both old and new primary email
+    const emailOptions = {
+      actionDescribed: `the primary email address on your account was changed to ${email}`,
+      action: 'change of primary email address'
+    }
+    const toOld = Object.assign({}, emailOptions, { to: oldEmail })
+    const toNew = Object.assign({}, emailOptions, { to: email })
+    try {
+      await EmailHandler.promises.sendEmail('securityAlert', toOld)
+      await EmailHandler.promises.sendEmail('securityAlert', toNew)
+    } catch (error) {
+      logger.error(
+        { err: error, userId },
+        'could not send security alert email when primary email changed'
+      )
+    }
+  }
+
+  try {
+    await NewsletterManager.promises.changeEmail(user, email)
+  } catch (error) {
+    logger.warn(
+      { err: error, oldEmail, newEmail: email },
+      'Failed to change email in newsletter subscription'
+    )
+  }
+
+  try {
+    await RecurlyWrapper.promises.updateAccountEmailAddress(user._id, email)
+  } catch (error) {
+    // errors are ignored
+  }
+}
 
 const UserUpdater = {
-  addAffiliationForNewUser(userId, email, callback) {
-    addAffiliation(userId, email, error => {
+  addAffiliationForNewUser(userId, email, affiliationOptions, callback) {
+    if (callback == null) {
+      // affiliationOptions is optional
+      callback = affiliationOptions
+      affiliationOptions = {}
+    }
+    addAffiliation(userId, email, affiliationOptions, error => {
       if (error) {
         return callback(error)
       }
       UserUpdater.updateUser(
         { _id: userId, 'emails.email': email },
         { $unset: { 'emails.$.affiliationUnchecked': 1 } },
-        (error, updated) => {
-          if (error || (updated && updated.nModified === 0)) {
-            logger.error(
-              { userId, email },
-              'could not remove affiliationUnchecked flag for user on create'
+        error => {
+          if (error) {
+            callback(
+              OError.tag(
+                error,
+                'could not remove affiliationUnchecked flag for user on create',
+                {
+                  userId,
+                  email
+                }
+              )
             )
-            return callback(error)
+          } else {
+            callback()
           }
-          return callback(error, updated)
         }
       )
     })
@@ -62,7 +160,7 @@ const UserUpdater = {
   // default email and removing the old email.  Prefer manipulating multiple
   // emails and the default rather than calling this method directly
   //
-  changeEmailAddress(userId, newEmail, callback) {
+  changeEmailAddress(userId, newEmail, auditLog, callback) {
     newEmail = EmailHelper.parseEmail(newEmail)
     if (newEmail == null) {
       return callback(new Error('invalid email'))
@@ -77,7 +175,15 @@ const UserUpdater = {
             cb(error)
           }),
         cb => UserUpdater.addEmailAddress(userId, newEmail, cb),
-        cb => UserUpdater.setDefaultEmailAddress(userId, newEmail, true, cb),
+        cb =>
+          UserUpdater.setDefaultEmailAddress(
+            userId,
+            newEmail,
+            true,
+            auditLog,
+            true,
+            cb
+          ),
         cb => UserUpdater.removeEmailAddress(userId, oldEmail, cb)
       ],
       callback
@@ -104,10 +210,7 @@ const UserUpdater = {
 
       addAffiliation(userId, newEmail, affiliationOptions, error => {
         if (error != null) {
-          logger.warn(
-            { error },
-            'problem adding affiliation while adding email'
-          )
+          OError.tag(error, 'problem adding affiliation while adding email')
           return callback(error)
         }
 
@@ -123,7 +226,7 @@ const UserUpdater = {
         }
         UserUpdater.updateUser(userId, update, error => {
           if (error != null) {
-            logger.warn({ error }, 'problem updating users emails')
+            OError.tag(error, 'problem updating users emails')
             return callback(error)
           }
           callback()
@@ -141,7 +244,7 @@ const UserUpdater = {
     }
     removeAffiliation(userId, email, error => {
       if (error != null) {
-        logger.warn({ error }, 'problem removing affiliation')
+        OError.tag(error, 'problem removing affiliation')
         return callback(error)
       }
 
@@ -149,68 +252,20 @@ const UserUpdater = {
       const update = { $pull: { emails: { email } } }
       UserUpdater.updateUser(query, update, (error, res) => {
         if (error != null) {
-          logger.warn({ error }, 'problem removing users email')
+          OError.tag(error, 'problem removing users email')
           return callback(error)
         }
         if (res.n === 0) {
           return callback(new Error('Cannot remove email'))
         }
-        callback()
+        FeaturesUpdater.refreshFeatures(userId, callback)
       })
     })
   },
 
   // set the default email address by setting the `email` attribute. The email
   // must be one of the user's multiple emails (`emails` attribute)
-  setDefaultEmailAddress(userId, email, allowUnconfirmed, callback) {
-    if (typeof allowUnconfirmed === 'function') {
-      callback = allowUnconfirmed
-      allowUnconfirmed = false
-    }
-    email = EmailHelper.parseEmail(email)
-    if (email == null) {
-      return callback(new Error('invalid email'))
-    }
-    UserGetter.getUser(userId, { email: 1, emails: 1 }, (err, user) => {
-      if (err) {
-        return callback(err)
-      }
-      if (!user) {
-        return callback(new Error('invalid userId'))
-      }
-      const oldEmail = user.email
-      const userEmail = user.emails.find(e => e.email === email)
-      if (!userEmail) {
-        return callback(new Error('Default email does not belong to user'))
-      }
-      if (!userEmail.confirmedAt && !allowUnconfirmed) {
-        return callback(new Errors.UnconfirmedEmailError())
-      }
-      const query = { _id: userId, 'emails.email': email }
-      const update = { $set: { email } }
-      UserUpdater.updateUser(query, update, (err, res) => {
-        if (err) {
-          return callback(err)
-        }
-        // this should not happen
-        if (res.n === 0) {
-          return callback(new Error('email update error'))
-        }
-        NewsletterManager.changeEmail(user, email, err => {
-          if (err != null) {
-            logger.warn(
-              { err, oldEmail, newEmail: email },
-              'Failed to change email in newsletter subscription'
-            )
-          }
-        })
-        RecurlyWrapper.updateAccountEmailAddress(user._id, email, _error => {
-          // errors are ignored
-        })
-        callback()
-      })
-    })
-  },
+  setDefaultEmailAddress: callbackify(setDefaultEmailAddress),
 
   confirmEmail(userId, email, confirmedAt, callback) {
     if (arguments.length === 3) {
@@ -224,10 +279,7 @@ const UserUpdater = {
     logger.log({ userId, email }, 'confirming user email')
     addAffiliation(userId, email, { confirmedAt }, error => {
       if (error != null) {
-        logger.warn(
-          { error },
-          'problem adding affiliation while confirming email'
-        )
+        OError.tag(error, 'problem adding affiliation while confirming email')
         return callback(error)
       }
 
@@ -284,7 +336,9 @@ const promises = {
   addAffiliationForNewUser: promisify(UserUpdater.addAffiliationForNewUser),
   addEmailAddress: promisify(UserUpdater.addEmailAddress),
   confirmEmail: promisify(UserUpdater.confirmEmail),
-  updateUser: promisify(UserUpdater.updateUser)
+  setDefaultEmailAddress,
+  updateUser: promisify(UserUpdater.updateUser),
+  removeReconfirmFlag: promisify(UserUpdater.removeReconfirmFlag)
 }
 
 UserUpdater.promises = promises

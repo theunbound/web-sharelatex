@@ -11,7 +11,7 @@ div(ng-controller="GroupMembershipController")
 						//- Team notice is sanitized in SubscriptionViewModelBuilder
 						em(ng-non-bindable) !{groupSubscription.teamNotice}
 				span 
-					button.btn.btn-danger.text-capitalise(ng-click="removeSelfFromGroup('"+groupSubscription.admin_id._id+"')") #{translate("leave_group")}
+					button.btn.btn-danger.text-capitalise(ng-click="removeSelfFromGroup('"+groupSubscription._id+"')") #{translate("leave_group")}
 			hr
 
 script(type='text/ng-template', id='LeaveGroupModalTemplate')
@@ -29,4 +29,4 @@ script(type='text/ng-template', id='LeaveGroupModalTemplate')
 			ng-click="confirmLeaveGroup()"
 		)
 			span(ng-hide="inflight") #{translate("leave_now")}
-			span(ng-show="inflight") #{translate("processing")}...
+			span(ng-show="inflight") #{translate("processing")}…

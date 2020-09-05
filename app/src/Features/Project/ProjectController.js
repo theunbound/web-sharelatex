@@ -1,8 +1,10 @@
 const Path = require('path')
+const OError = require('@overleaf/o-error')
 const fs = require('fs')
 const crypto = require('crypto')
 const async = require('async')
 const logger = require('logger-sharelatex')
+const { ObjectId } = require('../../infrastructure/mongojs')
 const ProjectDeleter = require('./ProjectDeleter')
 const ProjectDuplicator = require('./ProjectDuplicator')
 const ProjectCreationHandler = require('./ProjectCreationHandler')
@@ -25,7 +27,6 @@ const PackageVersions = require('../../infrastructure/PackageVersions')
 const Sources = require('../Authorization/Sources')
 const TokenAccessHandler = require('../TokenAccess/TokenAccessHandler')
 const CollaboratorsGetter = require('../Collaborators/CollaboratorsGetter')
-const Modules = require('../../infrastructure/Modules')
 const ProjectEntityHandler = require('./ProjectEntityHandler')
 const TpdsProjectFlusher = require('../ThirdPartyDataStore/TpdsProjectFlusher')
 const UserGetter = require('../User/UserGetter')
@@ -34,11 +35,15 @@ const { V1ConnectionError } = require('../Errors/Errors')
 const Features = require('../../infrastructure/Features')
 const BrandVariationsHandler = require('../BrandVariations/BrandVariationsHandler')
 const { getUserAffiliations } = require('../Institutions/InstitutionsAPI')
-const V1Handler = require('../V1/V1Handler')
 const UserController = require('../User/UserController')
+const AnalyticsManager = require('../Analytics/AnalyticsManager')
 
 const _ssoAvailable = (affiliation, session, linkedInstitutionIds) => {
   if (!affiliation.institution) return false
+
+  // institution.confirmed is for the domain being confirmed, not the email
+  // Do not show SSO UI for unconfirmed domains
+  if (!affiliation.institution.confirmed) return false
 
   // Could have multiple emails at the same institution, and if any are
   // linked to the institution then do not show notification for others
@@ -246,29 +251,42 @@ const ProjectController = {
       return res.send({ redir: '/register' })
     }
     const currentUser = AuthenticationController.getSessionUser(req)
+    const { first_name: firstName, last_name: lastName, email } = currentUser
     ProjectDuplicator.duplicate(
       currentUser,
       projectId,
       projectName,
       (err, project) => {
         if (err != null) {
-          logger.warn(
-            { err, projectId, userId: currentUser._id },
-            'error cloning project'
-          )
+          OError.tag(err, 'error cloning project', {
+            projectId,
+            userId: currentUser._id
+          })
           return next(err)
         }
         res.send({
           name: project.name,
           project_id: project._id,
-          owner_ref: project.owner_ref
+          owner_ref: project.owner_ref,
+          owner: {
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            _id: currentUser._id
+          }
         })
       }
     )
   },
 
   newProject(req, res, next) {
-    const userId = AuthenticationController.getLoggedInUserId(req)
+    const currentUser = AuthenticationController.getSessionUser(req)
+    const {
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      _id: userId
+    } = currentUser
     const projectName =
       req.body.projectName != null ? req.body.projectName.trim() : undefined
     const { template } = req.body
@@ -313,7 +331,16 @@ const ProjectController = {
         if (err != null) {
           return next(err)
         }
-        res.send({ project_id: project._id })
+        res.send({
+          project_id: project._id,
+          owner_ref: project.owner_ref,
+          owner: {
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            _id: userId
+          }
+        })
       }
     )
   },
@@ -342,7 +369,6 @@ const ProjectController = {
         // _buildProjectList already converts archived/trashed to booleans so isArchivedOrTrashed should not be used here
         projects = ProjectController._buildProjectList(projects, userId)
           .filter(p => !(p.archived || p.trashed))
-          .filter(p => !p.isV1Project)
           .map(p => ({ _id: p.id, name: p.name, accessLevel: p.accessLevel }))
 
         res.json({ projects })
@@ -364,7 +390,8 @@ const ProjectController = {
           }
           const entities = docs
             .concat(files)
-            .sort((a, b) => a.path > b.path) // Sort by path ascending
+            // Sort by path ascending
+            .sort((a, b) => (a.path > b.path ? 1 : a.path < b.path ? -1 : 0))
             .map(e => ({
               path: e.path,
               type: e.doc != null ? 'doc' : 'file'
@@ -396,22 +423,6 @@ const ProjectController = {
             cb
           )
         },
-        v1Projects(cb) {
-          if (!Features.hasFeature('overleaf-integration')) {
-            return cb(null, null)
-          }
-
-          Modules.hooks.fire('findAllV1Projects', userId, (error, projects) => {
-            if (projects == null) {
-              projects = []
-            }
-            if (error != null && error instanceof V1ConnectionError) {
-              noV1Connection = true
-              return cb(null, null)
-            }
-            cb(error, projects[0])
-          })
-        }, // hooks.fire returns an array of results, only need first
         hasSubscription(cb) {
           LimitationsManager.hasPaidSubscription(
             currentUser,
@@ -433,7 +444,7 @@ const ProjectController = {
         },
         userAffiliations(cb) {
           if (!Features.hasFeature('affiliations')) {
-            return cb(null, null)
+            return cb(null, [])
           }
           getUserAffiliations(userId, (error, affiliations) => {
             if (error && error instanceof V1ConnectionError) {
@@ -446,12 +457,8 @@ const ProjectController = {
       },
       (err, results) => {
         if (err != null) {
-          logger.warn({ err }, 'error getting data for project list page')
+          OError.tag(err, 'error getting data for project list page')
           return next(err)
-        }
-        if (noV1Connection) {
-          results.v1Projects = results.v1Projects || { projects: [], tags: [] }
-          results.v1Projects.noConnection = true
         }
         const { notifications, user, userAffiliations } = results
         // Handle case of deleted user
@@ -459,10 +466,7 @@ const ProjectController = {
           UserController.logout(req, res, next)
           return
         }
-        const v1Tags =
-          (results.v1Projects != null ? results.v1Projects.tags : undefined) ||
-          []
-        const tags = results.tags.concat(v1Tags)
+        const tags = results.tags
         const notificationsInstitution = []
         for (const notification of notifications) {
           notification.html = req.i18n.translate(
@@ -561,12 +565,9 @@ const ProjectController = {
         )
         const projects = ProjectController._buildProjectList(
           results.projects,
-          userId,
-          results.v1Projects != null ? results.v1Projects.projects : undefined
+          userId
         )
-        const warnings = ProjectController._buildWarningsList(
-          results.v1Projects
-        )
+        const warnings = ProjectController._buildWarningsList(noV1Connection)
 
         // in v2 add notifications for matching university IPs
         if (Settings.overleaf != null && req.ip !== user.lastLoginIp) {
@@ -589,9 +590,6 @@ const ProjectController = {
             userAffiliations,
             hasSubscription: results.hasSubscription,
             institutionLinkingError,
-            isShowingV1Projects:
-              results.v1Projects != null &&
-              results.v1Projects.projects.length > 0,
             warnings,
             zipFileSizeLimit: Settings.maxUploadSize
           }
@@ -632,16 +630,18 @@ const ProjectController = {
   },
 
   loadEditor(req, res, next) {
-    let anonymous, userId
     const timer = new metrics.Timer('load-editor')
     if (!Settings.editorIsOpen) {
       return res.render('general/closed', { title: 'updating_site' })
     }
 
+    let anonymous, userId, sessionUser
     if (AuthenticationController.isUserLoggedIn(req)) {
+      sessionUser = AuthenticationController.getSessionUser(req)
       userId = AuthenticationController.getLoggedInUserId(req)
       anonymous = false
     } else {
+      sessionUser = null
       anonymous = true
       userId = null
     }
@@ -666,35 +666,7 @@ const ProjectController = {
               if (err != null) {
                 return cb(err)
               }
-              if (
-                (project.overleaf != null ? project.overleaf.id : undefined) ==
-                  null ||
-                (project.tokens != null
-                  ? project.tokens.readAndWrite
-                  : undefined) == null ||
-                Settings.projectImportingCheckMaxCreateDelta == null
-              ) {
-                return cb(null, project)
-              }
-              const createDelta =
-                (new Date().getTime() -
-                  new Date(project._id.getTimestamp()).getTime()) /
-                1000
-              if (
-                !(createDelta < Settings.projectImportingCheckMaxCreateDelta)
-              ) {
-                return cb(null, project)
-              }
-              V1Handler.getDocExported(
-                project.tokens.readAndWrite,
-                (err, docExported) => {
-                  if (err != null) {
-                    return next(err)
-                  }
-                  project.exporting = docExported.exporting
-                  cb(null, project)
-                }
-              )
+              cb(null, project)
             }
           )
         },
@@ -702,16 +674,20 @@ const ProjectController = {
           if (userId == null) {
             cb(null, defaultSettingsForAnonymousUser(userId))
           } else {
-            User.findById(userId, (err, user) => {
-              // Handle case of deleted user
-              if (user == null) {
-                UserController.logout(req, res, next)
-                return
-              }
+            User.findById(
+              userId,
+              'email first_name last_name referal_id signUpDate featureSwitches features refProviders alphaProgram betaProgram isAdmin ace',
+              (err, user) => {
+                // Handle case of deleted user
+                if (user == null) {
+                  UserController.logout(req, res, next)
+                  return
+                }
 
-              logger.log({ projectId, userId }, 'got user')
-              cb(err, user)
-            })
+                logger.log({ projectId, userId }, 'got user')
+                cb(err, user)
+              }
+            )
           }
         },
         subscription(cb) {
@@ -756,7 +732,7 @@ const ProjectController = {
       },
       (err, results) => {
         if (err != null) {
-          logger.warn({ err }, 'error getting details for project page')
+          OError.tag(err, 'error getting details for project page')
           return next(err)
         }
         const { project } = results
@@ -769,6 +745,9 @@ const ProjectController = {
           projectId
         )
         const { isTokenMember } = results
+        const allowedImageNames = ProjectHelper.getAllowedImagesForUser(
+          sessionUser
+        )
         AuthorizationManager.getPrivilegeLevelForProject(
           userId,
           projectId,
@@ -785,11 +764,6 @@ const ProjectController = {
               return res.sendStatus(401)
             }
 
-            if (project.exporting) {
-              res.render('project/importing', { bodyClasses: ['editor'] })
-              return
-            }
-
             if (
               subscription != null &&
               subscription.freeTrial != null &&
@@ -803,6 +777,15 @@ const ProjectController = {
             if (user.betaProgram && Settings.wsUrlBeta !== undefined) {
               wsUrl = Settings.wsUrlBeta
               metricName += '-beta'
+            } else if (
+              Settings.wsUrlV2 &&
+              Settings.wsUrlV2Percentage > 0 &&
+              (ObjectId(projectId).getTimestamp() / 1000) %
+                100 <
+                Settings.wsUrlV2Percentage
+            ) {
+              wsUrl = Settings.wsUrlV2
+              metricName += '-v2'
             }
             if (req.query && req.query.ws === 'fallback') {
               // `?ws=fallback` will connect to the bare origin, and ignore
@@ -814,6 +797,16 @@ const ProjectController = {
               metricName += '-fallback'
             }
             metrics.inc(metricName)
+
+            const enableOptimize =
+              !!Settings.experimentId &&
+              (user.features && !user.features.zotero)
+
+            if (userId) {
+              AnalyticsManager.recordEvent(userId, 'project-opened', {
+                projectId: project._id
+              })
+            }
 
             res.render('project/editor', {
               title: project.name,
@@ -833,6 +826,7 @@ const ProjectController = {
                 featureSwitches: user.featureSwitches,
                 features: user.features,
                 refProviders: user.refProviders,
+                alphaProgram: user.alphaProgram,
                 betaProgram: user.betaProgram,
                 isAdmin: user.isAdmin
               },
@@ -867,10 +861,13 @@ const ProjectController = {
                 project.overleaf.history &&
                 Boolean(project.overleaf.history.display),
               brandVariation,
-              allowedImageNames: Settings.allowedImageNames || [],
+              allowedImageNames,
               gitBridgePublicBaseUrl: Settings.gitBridgePublicBaseUrl,
               wsUrl,
-              showSupport: Features.hasFeature('support')
+              showSupport: Features.hasFeature('support'),
+              gaOptimize: enableOptimize,
+              customOptimizeEvent: true,
+              experimentId: Settings.experimentId
             })
             timer.done()
           }
@@ -879,11 +876,8 @@ const ProjectController = {
     )
   },
 
-  _buildProjectList(allProjects, userId, v1Projects) {
+  _buildProjectList(allProjects, userId) {
     let project
-    if (v1Projects == null) {
-      v1Projects = []
-    }
     const {
       owned,
       readAndWrite,
@@ -922,9 +916,6 @@ const ProjectController = {
           userId
         )
       )
-    }
-    for (project of v1Projects) {
-      projects.push(ProjectController._buildV1ProjectViewModel(project))
     }
     // Token-access
     //   Only add these projects if they're not already present, this gives us cascading access
@@ -989,39 +980,6 @@ const ProjectController = {
     return model
   },
 
-  _buildV1ProjectViewModel(project) {
-    const archived = project.archived
-    // If a project is simultaneously trashed and archived, we will consider it archived but not trashed.
-    const trashed = project.removed && !archived
-
-    const projectViewModel = {
-      id: project.id,
-      name: project.title,
-      lastUpdated: new Date(project.updated_at * 1000), // Convert from epoch
-      archived: archived,
-      trashed: trashed,
-      isV1Project: true
-    }
-    if (
-      (project.owner != null && project.owner.user_is_owner) ||
-      (project.creator != null && project.creator.user_is_creator)
-    ) {
-      projectViewModel.accessLevel = 'owner'
-    } else {
-      projectViewModel.accessLevel = 'readOnly'
-    }
-    if (project.owner != null) {
-      projectViewModel.owner = {
-        first_name: project.owner.name
-      }
-    } else if (project.creator != null) {
-      projectViewModel.owner = {
-        first_name: project.creator.name
-      }
-    }
-    return projectViewModel
-  },
-
   _injectProjectUsers(projects, callback) {
     const users = {}
     for (const project of projects) {
@@ -1067,22 +1025,12 @@ const ProjectController = {
     )
   },
 
-  _buildWarningsList(v1ProjectData) {
-    if (v1ProjectData == null) {
-      v1ProjectData = {}
-    }
-    const warnings = []
-    if (v1ProjectData.noConnection) {
-      warnings.push(
-        'Error accessing Overleaf V1. Some of your projects or features may be missing.'
-      )
-    }
-    if (v1ProjectData.hasHiddenV1Projects) {
-      warnings.push(
-        "Looks like you've got a lot of V1 projects! Some of them may be hidden on V2. To view them all, use the V1 dashboard."
-      )
-    }
-    return warnings
+  _buildWarningsList(noConnection) {
+    return noConnection
+      ? [
+          'Error accessing Overleaf V1. Some of your projects or features may be missing.'
+        ]
+      : []
   },
 
   _buildPortalTemplatesList(affiliations) {

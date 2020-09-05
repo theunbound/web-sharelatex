@@ -1,8 +1,3 @@
-/* NOTE: this file is an async/await version of
- * ProjectEntityMongoUpdateHandler.js. It's temporarily separate from the
- * callback-style version so that we can test it in production for some code
- * paths only.
- */
 const { callbackify } = require('util')
 const { callbackifyMultiResult } = require('../../util/promises')
 const _ = require('underscore')
@@ -48,6 +43,7 @@ module.exports = {
     'newProject'
   ]),
   replaceDocWithFile: callbackify(replaceDocWithFile),
+  replaceFileWithDoc: callbackify(replaceFileWithDoc),
   mkdirp: callbackifyMultiResult(wrapWithLock(mkdirp), [
     'newFolders',
     'folder'
@@ -83,6 +79,7 @@ module.exports = {
     addFolder: wrapWithLock(addFolder),
     replaceFileWithNew: wrapWithLock(replaceFileWithNew),
     replaceDocWithFile: wrapWithLock(replaceDocWithFile),
+    replaceFileWithDoc: wrapWithLock(replaceFileWithDoc),
     mkdirp: wrapWithLock(mkdirp),
     moveEntity: wrapWithLock(moveEntity),
     deleteEntity: wrapWithLock(deleteEntity),
@@ -207,6 +204,33 @@ async function replaceDocWithFile(projectId, docId, fileRef) {
       },
       $push: {
         [`${folderMongoPath}.fileRefs`]: fileRef
+      },
+      $inc: { version: 1 }
+    },
+    { new: true }
+  ).exec()
+  return newProject
+}
+
+async function replaceFileWithDoc(projectId, fileId, newDoc) {
+  const project = await ProjectGetter.promises.getProjectWithoutLock(
+    projectId,
+    { rootFolder: true, name: true, overleaf: true }
+  )
+  const { path } = await ProjectLocator.promises.findElement({
+    project,
+    element_id: fileId,
+    type: 'file'
+  })
+  const folderMongoPath = _getParentMongoPath(path.mongo)
+  const newProject = await Project.findOneAndUpdate(
+    { _id: project._id },
+    {
+      $pull: {
+        [`${folderMongoPath}.fileRefs`]: { _id: fileId }
+      },
+      $push: {
+        [`${folderMongoPath}.docs`]: newDoc
       },
       $inc: { version: 1 }
     },
@@ -635,13 +659,24 @@ async function _checkValidMove(
   }
 }
 
-async function createNewFolderStructure(projectId, docUploads, fileUploads) {
+/**
+ * Create an initial file tree out of a list of doc and file entries
+ *
+ * Each entry specifies a path to the doc or file. Folders are automatically
+ * created.
+ *
+ * @param {ObjectId} projectId - id of the project
+ * @param {DocEntry[]} docEntries - list of docs to add
+ * @param {FileEntry[]} fileEntries - list of files to add
+ * @return {Promise<string>} the project version after the operation
+ */
+async function createNewFolderStructure(projectId, docEntries, fileEntries) {
   try {
     const rootFolder = FolderStructureBuilder.buildFolderStructure(
-      docUploads,
-      fileUploads
+      docEntries,
+      fileEntries
     )
-    const result = await Project.updateOne(
+    const project = await Project.findOneAndUpdate(
       {
         _id: projectId,
         'rootFolder.0.folders.0': { $exists: false },
@@ -651,19 +686,21 @@ async function createNewFolderStructure(projectId, docUploads, fileUploads) {
       {
         $set: { rootFolder: [rootFolder] },
         $inc: { version: 1 }
+      },
+      {
+        new: true,
+        lean: true,
+        fields: { version: 1 }
       }
     ).exec()
-    if (result.n !== 1) {
-      throw new OError({
-        message: 'project not found or folder structure already exists',
-        info: { projectId }
+    if (project == null) {
+      throw new OError('project not found or folder structure already exists', {
+        projectId
       })
     }
+    return project.version
   } catch (err) {
-    throw new OError({
-      message: 'failed to create folder structure',
-      info: { projectId }
-    }).withCause(err)
+    throw OError.tag(err, 'failed to create folder structure', { projectId })
   }
 }
 

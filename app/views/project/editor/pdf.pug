@@ -18,7 +18,7 @@ div.full-size.pdf(ng-controller="PdfController")
 				)
 				| &nbsp;&nbsp;
 				span(ng-show="!pdf.compiling") #{translate("recompile")}
-				span(ng-show="pdf.compiling") #{translate("compiling")}...
+				span(ng-show="pdf.compiling") #{translate("compiling")}…
 			a.btn.btn-recompile.dropdown-toggle(
 				href,
 				ng-disabled="pdf.compiling",
@@ -113,7 +113,6 @@ div.full-size.pdf(ng-controller="PdfController")
 				tooltip-append-to-body="true"
 			)
 				i.fa.fa-expand
-				i.full-screen
 			a(
 				href,
 				ng-click="switchToSideBySideLayout('editor')"
@@ -123,8 +122,6 @@ div.full-size.pdf(ng-controller="PdfController")
 				tooltip-append-to-body="true"
 			)
 				i.fa.fa-compress
-				i.split-screen
-				i.split-screen
 	// end of toolbar
 
 	// logs view
@@ -285,6 +282,10 @@ div.full-size.pdf(ng-controller="PdfController")
 				strong #{translate("server_error")} 
 				span #{translate("clsi_maintenance")}
 
+			.alert.alert-danger(ng-show="pdf.clsiUnavailable")
+				strong #{translate("server_error")} 
+				span #{translate("clsi_unavailable")}
+
 			.alert.alert-danger(ng-show="pdf.tooRecentlyCompiled")
 				strong #{translate("server_error")} 
 				span #{translate("too_recently_compiled")}
@@ -370,4 +371,4 @@ script(type='text/ng-template', id='clearCacheModalTemplate')
 			ng-disabled="state.inflight"
 		) 
 			span(ng-show="!state.inflight") #{translate("clear_cache")}
-			span(ng-show="state.inflight") #{translate("clearing")}...
+			span(ng-show="state.inflight") #{translate("clearing")}…

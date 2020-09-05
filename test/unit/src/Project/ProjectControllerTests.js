@@ -2,7 +2,6 @@ const SandboxedModule = require('sandboxed-module')
 const path = require('path')
 const sinon = require('sinon')
 const { expect } = require('chai')
-const HttpErrors = require('@overleaf/o-error/http')
 const { ObjectId } = require('mongodb')
 const Errors = require('../../../../app/src/Features/Errors/Errors')
 
@@ -75,7 +74,8 @@ describe('ProjectController', function() {
     this.ProjectHelper = {
       isArchived: sinon.stub(),
       isTrashed: sinon.stub(),
-      isArchivedOrTrashed: sinon.stub()
+      isArchivedOrTrashed: sinon.stub(),
+      getAllowedImagesForUser: sinon.stub().returns([])
     }
     this.AuthenticationController = {
       getLoggedInUser: sinon.stub().callsArgWith(1, null, this.user),
@@ -102,11 +102,6 @@ describe('ProjectController', function() {
         .stub()
         .callsArgWith(2, null, { lastLoginIp: '192.170.18.2' })
     }
-    this.Modules = {
-      hooks: {
-        fire: sinon.stub()
-      }
-    }
     this.Features = {
       hasFeature: sinon.stub()
     }
@@ -123,6 +118,7 @@ describe('ProjectController', function() {
         email: 'test@overleaf.com',
         institution: {
           id: 1,
+          confirmed: true,
           name: 'Overleaf',
           ssoBeta: false,
           ssoEnabled: true
@@ -147,7 +143,6 @@ describe('ProjectController', function() {
           err() {}
         },
         'metrics-sharelatex': this.Metrics,
-        '@overleaf/o-error/http': HttpErrors,
         './ProjectDeleter': this.ProjectDeleter,
         './ProjectDuplicator': this.ProjectDuplicator,
         './ProjectCreationHandler': this.ProjectCreationHandler,
@@ -170,7 +165,6 @@ describe('ProjectController', function() {
           .AuthenticationController,
         '../TokenAccess/TokenAccessHandler': this.TokenAccessHandler,
         '../Collaborators/CollaboratorsGetter': this.CollaboratorsGetter,
-        '../../infrastructure/Modules': this.Modules,
         './ProjectEntityHandler': this.ProjectEntityHandler,
         '../Errors/Errors': Errors,
         '../../infrastructure/Features': this.Features,
@@ -182,8 +176,8 @@ describe('ProjectController', function() {
           getUserAffiliations: this.getUserAffiliations
         },
         '../ThirdPartyDataStore/TpdsProjectFlusher': this.TpdsProjectFlusher,
-        '../V1/V1Handler': {},
-        '../../models/Project': {}
+        '../../models/Project': {},
+        '../Analytics/AnalyticsManager': { recordEvent: () => {} }
       }
     })
 
@@ -423,10 +417,7 @@ describe('ProjectController', function() {
         null,
         this.allProjects
       )
-      this.Modules.hooks.fire
-        .withArgs('findAllV1Projects', this.user._id)
-        .yields(undefined)
-    }) // Without integration module hook, cb returns undefined
+    })
 
     it('should render the project/list page', function(done) {
       this.res.render = (pageName, opts) => {
@@ -520,17 +511,6 @@ describe('ProjectController', function() {
           'Error accessing Overleaf V1. Some of your projects or features may be missing.'
       })
 
-      it('should show a warning when there is an error getting v1 projects', function(done) {
-        this.Modules.hooks.fire
-          .withArgs('findAllV1Projects', this.user._id)
-          .yields(new Errors.V1ConnectionError('error'))
-        this.res.render = (pageName, opts) => {
-          expect(opts.warnings).to.contain(this.connectionWarning)
-          done()
-        }
-        this.ProjectController.projectListPage(this.req, this.res)
-      })
-
       it('should show a warning when there is an error getting subscriptions from v1', function(done) {
         this.LimitationsManager.hasPaidSubscription.yields(
           new Errors.V1ConnectionError('error')
@@ -592,82 +572,6 @@ describe('ProjectController', function() {
       })
     })
 
-    describe('with overleaf-integration-web-module hook', function() {
-      beforeEach(function() {
-        this.Features.hasFeature = sinon
-          .stub()
-          .withArgs('overleaf-integration')
-          .returns(true)
-        this.V1Response = {
-          projects: [
-            {
-              id: '123mockV1Id',
-              title: 'mock title',
-              updated_at: 1509616411,
-              removed: false,
-              archived: false
-            },
-            {
-              id: '456mockV1Id',
-              title: 'mock title 2',
-              updated_at: 1509616411,
-              removed: true,
-              archived: false
-            }
-          ],
-          tags: [{ name: 'mock tag', project_ids: ['123mockV1Id'] }]
-        }
-        this.Modules.hooks.fire
-          .withArgs('findAllV1Projects', this.user._id)
-          .yields(null, [this.V1Response])
-      }) // Need to wrap response in array, as multiple hooks could fire
-
-      it('should include V1 projects', function(done) {
-        this.res.render = (pageName, opts) => {
-          opts.projects.length.should.equal(
-            this.projects.length +
-              this.collabertions.length +
-              this.readOnly.length +
-              this.tokenReadAndWrite.length +
-              this.tokenReadOnly.length +
-              this.V1Response.projects.length
-          )
-          opts.projects.forEach(p => {
-            // Check properties correctly mapped from V1
-            expect(p).to.have.property('id')
-            expect(p).to.have.property('name')
-            expect(p).to.have.property('lastUpdated')
-            expect(p).to.have.property('accessLevel')
-            expect(p).to.have.property('archived')
-          })
-          done()
-        }
-        this.ProjectController.projectListPage(this.req, this.res)
-      })
-
-      it('should include V1 tags', function(done) {
-        this.res.render = (pageName, opts) => {
-          opts.tags.length.should.equal(
-            this.tags.length + this.V1Response.tags.length
-          )
-          opts.tags.forEach(t => {
-            expect(t).to.have.property('name')
-            expect(t).to.have.property('project_ids')
-          })
-          done()
-        }
-        this.ProjectController.projectListPage(this.req, this.res)
-      })
-
-      it('should have isShowingV1Projects flag', function(done) {
-        this.res.render = (pageName, opts) => {
-          opts.isShowingV1Projects.should.equal(true)
-          done()
-        }
-        this.ProjectController.projectListPage(this.req, this.res)
-      })
-    })
-
     describe('With Institution SSO feature', function() {
       beforeEach(function(done) {
         this.institutionEmail = 'test@overleaf.com'
@@ -677,12 +581,12 @@ describe('ProjectController', function() {
         this.Features.hasFeature.withArgs('overleaf-integration').returns(true)
         done()
       })
-      it('should show institution SSO available notification', function() {
+      it('should show institution SSO available notification for confirmed domains', function() {
         this.res.render = (pageName, opts) => {
           expect(opts.notificationsInstitution).to.deep.include({
-            email: 'test@overleaf.com',
+            email: this.institutionEmail,
             institutionId: 1,
-            institutionName: 'Overleaf',
+            institutionName: this.institutionName,
             templateKey: 'notification_institution_sso_available'
           })
         }
@@ -792,6 +696,29 @@ describe('ProjectController', function() {
         }
         this.ProjectController.projectListPage(this.req, this.res)
       })
+      describe('for an unconfirmed domain for an SSO institution', function() {
+        beforeEach(function(done) {
+          this.getUserAffiliations.yields(null, [
+            {
+              email: 'test@overleaf-uncofirmed.com',
+              institution: {
+                id: 1,
+                confirmed: false,
+                name: 'Overleaf',
+                ssoBeta: false,
+                ssoEnabled: true
+              }
+            }
+          ])
+          done()
+        })
+        it('should not show institution SSO available notification', function() {
+          this.res.render = (pageName, opts) => {
+            expect(opts.notificationsInstitution.length).to.equal(0)
+          }
+          this.ProjectController.projectListPage(this.req, this.res)
+        })
+      })
       describe('when linking/logging in initiated on institution side', function() {
         it('should not show a linked another email notification', function() {
           // this is only used when initated on Overleaf,
@@ -821,6 +748,7 @@ describe('ProjectController', function() {
               email: 'beta@beta.com',
               institution: {
                 id: 2,
+                confirmed: true,
                 name: 'Beta University',
                 ssoBeta: true,
                 ssoEnabled: false
@@ -927,10 +855,7 @@ describe('ProjectController', function() {
         null,
         this.allProjects
       )
-      this.Modules.hooks.fire
-        .withArgs('findAllV1Projects', this.user._id)
-        .yields(undefined)
-    }) // Without integration module hook, cb returns undefined
+    })
 
     it('should render the project/list page', function(done) {
       this.res.render = (pageName, opts) => {
@@ -1011,7 +936,7 @@ describe('ProjectController', function() {
         email: 'bob@bob.com'
       }
       this.ProjectGetter.getProject.callsArgWith(2, null, this.project)
-      this.UserModel.findById.callsArgWith(1, null, this.user)
+      this.UserModel.findById.callsArgWith(2, null, this.user)
       this.SubscriptionLocator.getUsersSubscription.callsArgWith(1, null, {})
       this.AuthorizationManager.getPrivilegeLevelForProject.callsArgWith(
         3,
@@ -1157,7 +1082,7 @@ describe('ProjectController', function() {
           this.ProjectController.loadEditor(this.req, this.res)
         })
       }
-      function checkWsFallback(isBeta) {
+      function checkWsFallback(isBeta, isV2) {
         describe('with ws=fallback', function() {
           beforeEach(function() {
             this.req.query = {}
@@ -1171,7 +1096,9 @@ describe('ProjectController', function() {
             this.ProjectController.loadEditor(this.req, this.res)
           })
           checkLoadEditorWsMetric(
-            `load-editor-ws${isBeta ? '-beta' : ''}-fallback`
+            `load-editor-ws${isBeta ? '-beta' : ''}${
+              isV2 ? '-v2' : ''
+            }-fallback`
           )
         })
       }
@@ -1218,6 +1145,157 @@ describe('ProjectController', function() {
           })
           checkLoadEditorWsMetric('load-editor-ws-beta')
           checkWsFallback(true)
+        })
+      })
+
+      describe('v2-rollout', function() {
+        beforeEach(function() {
+          this.settings.wsUrlBeta = '/beta.socket.io'
+          this.settings.wsUrlV2 = '/socket.io.v2'
+        })
+
+        function checkNonMatch() {
+          it('should set the normal custom wsUrl', function(done) {
+            this.res.render = (pageName, opts) => {
+              opts.wsUrl.should.equal('/other.socket.io')
+              done()
+            }
+            this.ProjectController.loadEditor(this.req, this.res)
+          })
+          checkLoadEditorWsMetric('load-editor-ws')
+          checkWsFallback(false)
+        }
+        function checkMatch() {
+          it('should set the v2 wsUrl', function(done) {
+            this.res.render = (pageName, opts) => {
+              opts.wsUrl.should.equal('/socket.io.v2')
+              done()
+            }
+            this.ProjectController.loadEditor(this.req, this.res)
+          })
+          checkLoadEditorWsMetric('load-editor-ws-v2')
+          checkWsFallback(false, true)
+        }
+        function checkForBetaUser() {
+          describe('for a beta user', function() {
+            beforeEach(function() {
+              this.user.betaProgram = true
+            })
+            it('should set the beta wsUrl', function(done) {
+              this.res.render = (pageName, opts) => {
+                opts.wsUrl.should.equal('/beta.socket.io')
+                done()
+              }
+              this.ProjectController.loadEditor(this.req, this.res)
+            })
+            checkLoadEditorWsMetric('load-editor-ws-beta')
+            checkWsFallback(true)
+          })
+        }
+
+        describe('when the roll out percentage is 0', function() {
+          beforeEach(function() {
+            this.settings.wsUrlV2Percentage = 0
+          })
+          describe('when the projectId does not match (0)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(0)
+            })
+            checkNonMatch()
+          })
+          describe('when the projectId does not match (42)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(42)
+            })
+            checkNonMatch()
+          })
+          checkForBetaUser()
+        })
+        describe('when the roll out percentage is 1', function() {
+          beforeEach(function() {
+            this.settings.wsUrlV2Percentage = 1
+          })
+          describe('when the projectId matches (0)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(0)
+            })
+            checkMatch()
+            checkForBetaUser()
+          })
+          describe('when the projectId does not match (1)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(1)
+            })
+            checkNonMatch()
+            checkForBetaUser()
+          })
+          describe('when the projectId does not match (42)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(42)
+            })
+            checkNonMatch()
+          })
+        })
+        describe('when the roll out percentage is 10', function() {
+          beforeEach(function() {
+            this.settings.wsUrlV2Percentage = 10
+          })
+          describe('when the projectId matches (0)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(0)
+            })
+            checkMatch()
+          })
+          describe('when the projectId matches (9)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(9)
+            })
+            checkMatch()
+            checkForBetaUser()
+          })
+          describe('when the projectId does not match (10)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(10)
+            })
+            checkNonMatch()
+          })
+          describe('when the projectId does not match (42)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(42)
+            })
+            checkNonMatch()
+            checkForBetaUser()
+          })
+        })
+        describe('when the roll out percentage is 100', function() {
+          beforeEach(function() {
+            this.settings.wsUrlV2Percentage = 100
+          })
+          describe('when the projectId matches (0)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(0)
+            })
+            checkMatch()
+            checkForBetaUser()
+          })
+          describe('when the projectId matches (10)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(10)
+            })
+            checkMatch()
+          })
+          describe('when the projectId matches (42)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(42)
+            })
+            checkMatch()
+          })
+          describe('when the projectId matches (99)', function() {
+            beforeEach(function() {
+              this.req.params.Project_id = ObjectId.createFromTime(99)
+            })
+            checkMatch()
+          })
         })
       })
     })

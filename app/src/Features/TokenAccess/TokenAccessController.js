@@ -64,11 +64,10 @@ async function _handleV1Project(token, userId) {
     }
     return {
       v1Import: {
-        status: 'canImport',
+        status: 'canDownloadZip',
         projectId: token,
         hasOwner: docInfo.has_owner,
         name: docInfo.name || 'Untitled',
-        hasAssignment: docInfo.has_assignment,
         brandInfo: docInfo.brand_info
       }
     }
@@ -94,10 +93,7 @@ async function tokenAccessPage(req, res, next) {
     })
   } catch (err) {
     return next(
-      new OError({
-        message: 'error while rendering token access page',
-        info: { token }
-      }).withCause(err)
+      OError.tag(err, 'error while rendering token access page', { token })
     )
   }
 }
@@ -245,10 +241,11 @@ async function grantTokenAccessReadAndWrite(req, res, next) {
     })
   } catch (err) {
     return next(
-      new OError({
-        message: 'error while trying to grant read-and-write token access',
-        info: { token }
-      }).withCause(err)
+      OError.tag(
+        err,
+        'error while trying to grant read-and-write token access',
+        { token }
+      )
     )
   }
 }
@@ -291,10 +288,9 @@ async function grantTokenAccessReadOnly(req, res, next) {
     })
   } catch (err) {
     return next(
-      new OError({
-        message: 'error while trying to grant read-only token access',
-        info: { token }
-      }).withCause(err)
+      OError.tag(err, 'error while trying to grant read-only token access', {
+        token
+      })
     )
   }
 }

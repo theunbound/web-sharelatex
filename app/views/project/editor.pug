@@ -31,7 +31,7 @@ block content
 				a#try-reconnect-now-button.alert-link-as-btn.pull-right(href, ng-click="tryReconnectNow()") #{translate("try_now")}
 
 			.alert.alert-warning.small(ng-if="connection.reconnecting && connection.stillReconnecting")
-				strong #{translate("reconnecting")}...
+				strong #{translate("reconnecting")}…
 
 			.alert.alert-warning.small(ng-if="sync_tex_error")
 				strong #{translate("synctex_failed")}.
@@ -100,8 +100,8 @@ block content
 						include ./editor/binary-file
 						include ./editor/history
 
-			.ui-layout-east
-				if !isRestrictedTokenMember
+			if !isRestrictedTokenMember
+				.ui-layout-east
 					include ./editor/chat
 
 	include ./editor/hotkeys
@@ -120,6 +120,31 @@ block content
 		.modal-footer
 			button.btn.btn-info(ng-click="done()") #{translate("ok")}
 
+	script(type="text/ng-template", id="outOfSyncModalTemplate")
+		.modal-header
+			button.close(
+				type="button"
+				data-dismiss="modal"
+				ng-click="done()"
+				aria-label="Close"
+			)
+				span(aria-hidden="true") &times;
+			h3 {{ title }}
+		.modal-body(ng-bind-html="message")
+
+		.modal-body
+			button.btn.btn-info(
+				ng-init="showFileContents = false"
+				ng-click="showFileContents = !showFileContents"
+			)
+				| {{showFileContents ? "Hide" : "Show"}} Local File Contents
+			.text-preview(ng-show="showFileContents")
+				.scroll-container
+					| {{editorContent}}
+
+		.modal-footer
+			button.btn.btn-info(ng-click="done()") #{translate("ok")}
+
 	script(type="text/ng-template", id="lockEditorModalTemplate")
 		.modal-header
 			h3 {{ title }}
@@ -128,7 +153,7 @@ block content
 	//- We need to do .replace(/\//g, '\\/') do that '</script>' -> '<\/script>'
 	//- and doesn't prematurely end the script tag.
 	script#data(type="application/json").
-		!{StringHelper.stringifyJsonForScript({ userSettings: userSettings, user: user, trackChangesState: trackChangesState, useV2History: useV2History, enabledLinkedFileTypes: settings.enabledLinkedFileTypes, brandVariation: brandVariation })}
+		!{StringHelper.stringifyJsonForScript({ userSettings: userSettings, user: user, trackChangesState: trackChangesState, useV2History: useV2History, enabledLinkedFileTypes: settings.enabledLinkedFileTypes, brandVariation: brandVariation, experimentId: experimentId })}
 
 	script(type='text/javascript').
 		window.data = JSON.parse(document.querySelector("#data").text);
@@ -154,6 +179,7 @@ block content
 		//- enable doc hash checking for all projects
 		//- used in public/js/libs/sharejs.js
 		window.useShareJsHash = true
+		window.wsRetryHandshake = #{settings.wsRetryHandshake}
 
 	- if (settings.overleaf != null)
 		script(type='text/javascript').

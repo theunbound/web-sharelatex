@@ -42,14 +42,19 @@ html(
 			if gaOptimize === true && typeof(gaOptimizeId) != "undefined"
 				script(type='text/javascript').
 					ga('require', '#{gaOptimizeId}')
-				//- Anti-flicker snippet
-				style(type='text/css') .async-hide { opacity: 0 !important}
-				script(type='text/javascript').
-					(function(a,s,y,n,c,h,i,d,e){s.className+=' '+y;h.start=1*new Date;
-					h.end=i=function(){s.className=s.className.replace(RegExp(' ?'+y),'')};
-					(a[n]=a[n]||[]).hide=h;setTimeout(function(){i();h.end=null},c);h.timeout=c;
-					})(window,document.documentElement,'async-hide','dataLayer',4000,
-					{'#{gaOptimizeId}':true});
+				if !customOptimizeEvent
+					script(type='text/javascript').
+						ga('send', 'event', 'pageview',  document.title.substring(0, 499), window.location.href.substring(0, 499))
+				if !experimentId
+					//- Anti-flicker snippet
+					//- Only run for tests controlled by Optimize editor
+					style(type='text/css') .async-hide { opacity: 0 !important}
+					script(type='text/javascript').
+						(function(a,s,y,n,c,h,i,d,e){s.className+=' '+y;h.start=1*new Date;
+						h.end=i=function(){s.className=s.className.replace(RegExp(' ?'+y),'')};
+						(a[n]=a[n]||[]).hide=h;setTimeout(function(){i();h.end=null},c);h.timeout=c;
+						})(window,document.documentElement,'async-hide','dataLayer',4000,
+						{'#{gaOptimizeId}':true});
 
 		- else
 			script(type='text/javascript').
@@ -70,6 +75,11 @@ html(
 			};
 			window.ab = {};
 			window.user_id = '#{getLoggedInUserId()}';
+			//- Internationalisation settings
+			window.i18n = {
+				currentLangCode: '#{currentLngCode}'
+			}
+			//- Expose some settings globally to the frontend
 			window.ExposedSettings = JSON.parse('!{StringHelper.stringifyJsonForScript(ExposedSettings)}');
 
 		- if (typeof(settings.algolia) != "undefined")
@@ -99,12 +109,10 @@ html(
 
 		block content
 
-		div(ng-controller="AbTestController")
 		- if(typeof(suppressFooter) == "undefined")
 			include layout/footer
 
 		!= moduleIncludes("contactModal", locals)
-		include v1-tooltip
 
 		block foot-scripts
 			script(src=buildJsPath('libraries.js'))

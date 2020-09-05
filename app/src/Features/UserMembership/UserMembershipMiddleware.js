@@ -5,7 +5,7 @@ const AuthenticationController = require('../Authentication/AuthenticationContro
 const UserMembershipHandler = require('./UserMembershipHandler')
 const EntityConfigs = require('./UserMembershipEntityConfigs')
 const Errors = require('../Errors/Errors')
-const HttpErrors = require('@overleaf/o-error/http')
+const HttpErrorHandler = require('../Errors/HttpErrorHandler')
 const TemplatesManager = require('../Templates/TemplatesManager')
 
 // set of middleware arrays or functions that checks user access to an entity
@@ -164,15 +164,17 @@ let UserMembershipMiddleware = {
     req.params.id = req.query.resource_id
     let entityName = req.query.resource_type
     if (!entityName) {
-      return next(new HttpErrors.NotFoundError('resource_type param missing'))
+      return HttpErrorHandler.notFound(req, res, 'resource_type param missing')
     }
     entityName = entityName.charAt(0).toUpperCase() + entityName.slice(1)
 
     const middleware =
       UserMembershipMiddleware[`require${entityName}MetricsAccess`]
     if (!middleware) {
-      return next(
-        new HttpErrors.NotFoundError(`incorrect entity name: ${entityName}`)
+      return HttpErrorHandler.notFound(
+        req,
+        res,
+        `incorrect entity name: ${entityName}`
       )
     }
     // run the list of middleware functions in series. This is essencially
@@ -284,6 +286,6 @@ function allowAccessIfAny(accessFunctions) {
         return next()
       }
     }
-    next(new HttpErrors.ForbiddenError({}))
+    HttpErrorHandler.forbidden(req, res)
   }
 }

@@ -32,6 +32,14 @@ const _ = require('lodash')
 
 describe('ProjectStructureMongoLock', function() {
   describe('whilst a project lock is taken', function() {
+    let oldMaxLockWaitTime
+    before(function() {
+      oldMaxLockWaitTime = LockManager.MAX_LOCK_WAIT_TIME
+    })
+    after(function() {
+      LockManager.MAX_LOCK_WAIT_TIME = oldMaxLockWaitTime
+    })
+
     beforeEach(function(done) {
       // We want to instantly fail if the lock is taken
       LockManager.MAX_LOCK_WAIT_TIME = 1
@@ -40,7 +48,7 @@ describe('ProjectStructureMongoLock', function() {
         holdingAccount: false,
         email: 'test@example.com'
       }
-      UserCreator.createNewUser(userDetails, (err, user) => {
+      UserCreator.createNewUser(userDetails, {}, (err, user) => {
         this.user = user
         if (err != null) {
           throw err

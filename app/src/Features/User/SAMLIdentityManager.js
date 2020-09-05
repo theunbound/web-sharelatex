@@ -1,7 +1,9 @@
 const EmailHandler = require('../Email/EmailHandler')
 const Errors = require('../Errors/Errors')
 const InstitutionsAPI = require('../Institutions/InstitutionsAPI')
+const NotificationsBuilder = require('../Notifications/NotificationsBuilder')
 const OError = require('@overleaf/o-error')
+const SubscriptionLocator = require('../Subscription/SubscriptionLocator')
 const UserGetter = require('../User/UserGetter')
 const UserUpdater = require('../User/UserUpdater')
 const logger = require('logger-sharelatex')
@@ -58,19 +60,9 @@ async function _addIdentifier(
     if (err.code === 11000) {
       throw new Errors.SAMLIdentityExistsError()
     } else {
-      throw new OError(err)
+      throw OError.tag(err)
     }
   }
-}
-
-function _getUserQuery(providerId, externalUserId) {
-  externalUserId = externalUserId.toString()
-  providerId = providerId.toString()
-  const query = {
-    'samlIdentifiers.externalUserId': externalUserId,
-    'samlIdentifiers.providerId': providerId
-  }
-  return query
 }
 
 async function _addInstitutionEmail(userId, email, providerId) {
@@ -106,49 +98,61 @@ async function _sendLinkedEmail(userId, providerName) {
   const user = await UserGetter.promises.getUser(userId, { email: 1 })
   const emailOptions = {
     to: user.email,
-    provider: providerName
+    actionDescribed: `an Institutional SSO account at ${providerName} was linked to your account ${
+      user.email
+    }`,
+    action: 'institutional SSO account linked'
   }
-  EmailHandler.sendEmail(
-    'emailThirdPartyIdentifierLinked',
-    emailOptions,
-    error => {
-      if (error != null) {
-        logger.warn(error)
-      }
+  EmailHandler.sendEmail('securityAlert', emailOptions, error => {
+    if (error) {
+      logger.warn({ err: error })
     }
-  )
+  })
 }
 
 function _sendUnlinkedEmail(primaryEmail, providerName) {
   const emailOptions = {
     to: primaryEmail,
-    provider: providerName
+    actionDescribed: `an Institutional SSO account at ${providerName} is no longer linked to your account ${primaryEmail}`,
+    action: 'institutional SSO account no longer linked'
   }
-  EmailHandler.sendEmail(
-    'emailThirdPartyIdentifierUnlinked',
-    emailOptions,
-    error => {
-      if (error != null) {
-        logger.warn(error)
-      }
+  EmailHandler.sendEmail('securityAlert', emailOptions, error => {
+    if (error) {
+      logger.warn({ err: error })
     }
-  )
+  })
 }
 
 async function getUser(providerId, externalUserId) {
-  if (providerId == null || externalUserId == null) {
+  if (!providerId || !externalUserId) {
     throw new Error(
       `invalid arguments: providerId: ${providerId}, externalUserId: ${externalUserId}`
     )
   }
-  providerId = providerId.toString()
-  externalUserId = externalUserId.toString()
-  const query = _getUserQuery(providerId, externalUserId)
-  let user = await User.findOne(query).exec()
-  if (!user) {
-    throw new Errors.SAMLUserNotFoundError()
-  }
+  const user = await User.findOne({
+    'samlIdentifiers.externalUserId': externalUserId.toString(),
+    'samlIdentifiers.providerId': providerId.toString()
+  }).exec()
+
   return user
+}
+
+async function redundantSubscription(userId, providerId, providerName) {
+  const subscription = await SubscriptionLocator.promises.getUserIndividualSubscription(
+    userId
+  )
+
+  if (subscription) {
+    await NotificationsBuilder.promises
+      .redundantPersonalSubscription(
+        {
+          institutionId: providerId,
+          institutionName: providerName
+        },
+        { _id: userId }
+      )
+      .create()
+  }
 }
 
 async function linkAccounts(
@@ -171,6 +175,11 @@ async function linkAccounts(
   // update v1 affiliations record
   if (hasEntitlement) {
     await InstitutionsAPI.promises.addEntitlement(userId, institutionEmail)
+    try {
+      await redundantSubscription(userId, providerId, providerName)
+    } catch (error) {
+      logger.err({ err: error }, 'error checking redundant subscription')
+    }
   } else {
     await InstitutionsAPI.promises.removeEntitlement(userId, institutionEmail)
   }
@@ -271,6 +280,7 @@ const SAMLIdentityManager = {
   entitlementAttributeMatches,
   getUser,
   linkAccounts,
+  redundantSubscription,
   unlinkAccounts,
   updateEntitlement,
   userHasEntitlement

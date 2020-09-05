@@ -14,6 +14,7 @@
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
 let V1Handler
+const OError = require('@overleaf/o-error')
 const V1Api = require('./V1Api')
 const Settings = require('settings-sharelatex')
 const logger = require('logger-sharelatex')
@@ -32,10 +33,9 @@ module.exports = V1Handler = {
       },
       function(err, response, body) {
         if (err != null) {
-          logger.warn(
-            { email, err },
-            '[V1Handler] error while talking to v1 login api'
-          )
+          OError.tag(err, '[V1Handler] error while talking to v1 login api', {
+            email
+          })
           return callback(err)
         }
         if ([200, 403].includes(response.statusCode)) {
@@ -80,10 +80,9 @@ module.exports = V1Handler = {
       },
       function(err, response, body) {
         if (err != null) {
-          logger.warn(
-            { v1_user_id, err },
-            'error while talking to v1 password reset api'
-          )
+          OError.tag(err, 'error while talking to v1 password reset api', {
+            v1_user_id
+          })
           return callback(err, false)
         }
         if ([200].includes(response.statusCode)) {
@@ -100,29 +99,6 @@ module.exports = V1Handler = {
           )
           return callback(err, false)
         }
-      }
-    )
-  },
-
-  getDocExported(token, callback) {
-    // default to not exported
-    if (callback == null) {
-      callback = function(err, info) {}
-    }
-    if ((Settings.apis != null ? Settings.apis.v1 : undefined) == null) {
-      return callback(null, {
-        exported: false,
-        exporting: false
-      })
-    }
-
-    return V1Api.request(
-      { url: `/api/v1/sharelatex/docs/${token}/exported_to_v2` },
-      function(err, response, body) {
-        if (err != null) {
-          return callback(err)
-        }
-        return callback(null, body)
       }
     )
   }

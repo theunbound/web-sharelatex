@@ -5,29 +5,22 @@ const { db } = mongojs
 const { ObjectId } = mongojs
 const { promisifyAll } = require('../../util/promises')
 const { getUserAffiliations } = require('../Institutions/InstitutionsAPI')
+const InstitutionsHelper = require('../Institutions/InstitutionsHelper')
 const Errors = require('../Errors/Errors')
 const Features = require('../../infrastructure/Features')
 
 const UserGetter = {
   getUser(query, projection, callback) {
-    if (!query) {
-      return callback(new Error('no query provided'))
-    }
     if (arguments.length === 2) {
       callback = projection
       projection = {}
     }
-    if (typeof query === 'string') {
-      try {
-        query = { _id: ObjectId(query) }
-      } catch (e) {
-        return callback(null, null)
-      }
-    } else if (query instanceof ObjectId) {
-      query = { _id: query }
+    try {
+      query = normalizeQuery(query)
+      db.users.findOne(query, projection, callback)
+    } catch (err) {
+      callback(err)
     }
-
-    db.users.findOne(query, projection, callback)
   },
 
   getUserEmail(userId, callback) {
@@ -37,7 +30,10 @@ const UserGetter = {
   },
 
   getUserFullEmails(userId, callback) {
-    this.getUser(userId, { email: 1, emails: 1 }, function(error, user) {
+    this.getUser(userId, { email: 1, emails: 1, samlIdentifiers: 1 }, function(
+      error,
+      user
+    ) {
       if (error) {
         return callback(error)
       }
@@ -46,7 +42,10 @@ const UserGetter = {
       }
 
       if (!Features.hasFeature('affiliations')) {
-        return callback(null, decorateFullEmails(user.email, user.emails, []))
+        return callback(
+          null,
+          decorateFullEmails(user.email, user.emails, [], [])
+        )
       }
 
       getUserAffiliations(userId, function(error, affiliationsData) {
@@ -55,7 +54,12 @@ const UserGetter = {
         }
         callback(
           null,
-          decorateFullEmails(user.email, user.emails || [], affiliationsData)
+          decorateFullEmails(
+            user.email,
+            user.emails || [],
+            affiliationsData,
+            user.samlIdentifiers || []
+          )
         )
       })
     })
@@ -126,14 +130,13 @@ const UserGetter = {
     db.users.find(query, projection, callback)
   },
 
-  getUsers(userIds, projection, callback) {
+  getUsers(query, projection, callback) {
     try {
-      userIds = userIds.map(u => ObjectId(u.toString()))
-    } catch (error) {
-      return callback(error)
+      query = normalizeQuery(query)
+      db.users.find(query, projection, callback)
+    } catch (err) {
+      callback(err)
     }
-
-    db.users.find({ _id: { $in: userIds } }, projection, callback)
   },
 
   // check for duplicate email address. This is also enforced at the DB level
@@ -147,7 +150,28 @@ const UserGetter = {
   }
 }
 
-var decorateFullEmails = (defaultEmail, emailsData, affiliationsData) =>
+function normalizeQuery(query) {
+  if (!query) {
+    throw new Error('no query provided')
+  }
+  if (typeof query === 'string') {
+    return { _id: ObjectId(query) }
+  } else if (query instanceof ObjectId) {
+    return { _id: query }
+  } else if (Array.isArray(query)) {
+    const userIds = query.map(u => ObjectId(u.toString()))
+    return { _id: { $in: userIds } }
+  } else {
+    return query
+  }
+}
+
+var decorateFullEmails = (
+  defaultEmail,
+  emailsData,
+  affiliationsData,
+  samlIdentifiers
+) =>
   emailsData.map(function(emailData) {
     emailData.default = emailData.email === defaultEmail
 
@@ -166,6 +190,18 @@ var decorateFullEmails = (defaultEmail, emailsData, affiliationsData) =>
     } else {
       emailsData.affiliation = null
     }
+
+    if (emailData.samlProviderId) {
+      emailData.samlIdentifier = samlIdentifiers.find(
+        samlIdentifier => samlIdentifier.providerId === emailData.samlProviderId
+      )
+    } else {
+      emailsData.samlIdentifier = null
+    }
+
+    emailData.emailHasInstitutionLicence = InstitutionsHelper.emailHasLicence(
+      emailData
+    )
 
     return emailData
   })
