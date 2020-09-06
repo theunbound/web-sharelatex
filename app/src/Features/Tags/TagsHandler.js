@@ -2,7 +2,7 @@ const { Tag } = require('../../models/Tag')
 const { promisifyAll } = require('../../util/promises')
 
 function getAllTags(userId, callback) {
-  Tag.find({ user_id: userId }, callback)
+  Tag.find({ }, callback)
 }
 
 function createTag(userId, name, callback) {
@@ -24,8 +24,7 @@ function renameTag(userId, tagId, name, callback) {
   }
   Tag.update(
     {
-      _id: tagId,
-      user_id: userId
+      _id: tagId
     },
     {
       $set: {
@@ -42,8 +41,7 @@ function deleteTag(userId, tagId, callback) {
   }
   Tag.remove(
     {
-      _id: tagId,
-      user_id: userId
+      _id: tagId
     },
     callback
   )
@@ -64,8 +62,7 @@ function removeProjectFromTag(userId, tagId, projectId, callback) {
     callback = function() {}
   }
   const searchOps = {
-    _id: tagId,
-    user_id: userId
+    _id: tagId
   }
   const deleteOperation = { $pull: { project_ids: projectId } }
   Tag.update(searchOps, deleteOperation, callback)
@@ -76,8 +73,7 @@ function addProjectToTag(userId, tagId, projectId, callback) {
     callback = function() {}
   }
   const searchOps = {
-    _id: tagId,
-    user_id: userId
+    _id: tagId
   }
   const insertOperation = { $addToSet: { project_ids: projectId } }
   Tag.findOneAndUpdate(searchOps, insertOperation, callback)
@@ -88,15 +84,14 @@ function addProjectToTagName(userId, name, projectId, callback) {
     callback = function() {}
   }
   const searchOps = {
-    name,
-    user_id: userId
+    name
   }
   const insertOperation = { $addToSet: { project_ids: projectId } }
   Tag.update(searchOps, insertOperation, { upsert: true }, callback)
 }
 
 function removeProjectFromAllTags(userId, projectId, callback) {
-  const searchOps = { user_id: userId }
+  const searchOps = { }
   const deleteOperation = { $pull: { project_ids: projectId } }
   Tag.update(searchOps, deleteOperation, { multi: true }, callback)
 }
